@@ -1,7 +1,7 @@
 # Hourglass
 
 A native macOS notch app that shows your live Claude usage: the 5-hour limit and the weekly limit,
-with reset countdowns and how old the reading is.
+with a reset countdown, a daily budget for the rest of your week and how old the reading is.
 
 It gets the numbers by asking your own installed Claude Code: the app launches `claude` hidden,
 sends it a `get_usage` request, reads the answer and lets it exit. Claude Code makes the network
@@ -19,9 +19,9 @@ and never calls Anthropic itself.
 
 | State | How you get there | What you see |
 | --- | --- | --- |
-| At rest | Always on, beside the notch | A short usage line left of the notch and the 5-hour figure right of it, 36 pt each side and nothing below the notch. Amber from 75%, red from 90%, grey once the reading is over 30 minutes old, green "Ready" when no 5-hour window is open. |
-| Peek | Hover over the notch for a quarter of a second | 5-hour and weekly figures in large numerals, reset times, and when the numbers were last checked. Hovering never triggers a read. |
-| Expanded | Click the notch | Both limits as bars with a pace marker (where an even burn would be by now), a pace label, a warning if you'll run out before the reset at your current rate, per-model weekly limits (such as Fable), usage credits on or off with this month's spend, any promotional credit, and a link to claude.ai's usage page. A window with no open period shows "Ready", not 0%. |
+| At rest | Always on, beside the notch | Left of the notch, two rings: the outer one is the 5-hour limit, the inner one the weekly limit. Right of it, the time until the 5-hour reset ("50m", "2h09"). 36 pt each side and nothing below the notch. The outer ring turns amber from 75% and red from 90%; everything goes grey once the reading is over 30 minutes old, and the right side shows a green "Ready" when no 5-hour window is open. |
+| Peek | Hover over the notch for a quarter of a second | 5-hour and weekly percentages in large numerals, reset times, and when the numbers were last checked. Each limit has a bar: the fill is how much you've used, the tick is how much of the window's time has passed, so a fill past the tick means you're using it faster than an even pace. Hovering never triggers a read. |
+| Expanded | Click the notch | Both limits as bars with the same time-elapsed tick, a warning if you'll hit a limit before it resets at your current rate, and a weekly budget card: what's left of the weekly limit spread over the remaining days ("about 18% a day", or "N% left until reset" when under a day remains), with a strip of those days. Below that, per-model weekly limits (such as Fable), usage credits on or off with this month's spend, any promotional credit, and a link to claude.ai's usage page. A window with no open period shows "Ready", not 0%. |
 | Alert | Crossing 75%, 90% or 100%, or a limit resetting | A brief drop-down, once per threshold per window. |
 | Refresh | The ↻ button in the expanded view, or **Refresh now** in its menu | Asks Claude Code for fresh numbers, within the read budget (see below). |
 
@@ -96,7 +96,7 @@ rendered from a made-up reading with `Hourglass --render-previews <folder>`.
 
 ## Layout
 
-- `Sources/UsageCore`: models, the merge rules, pace and staleness maths, alerts, and the
+- `Sources/UsageCore`: models, the merge rules, pace, staleness and weekly budget maths, alerts, and the
   settings installer. Foundation only, fully unit tested.
 - `Sources/Bridge`: the status line command.
 - `Sources/Hourglass`: the app (SwiftUI and AppKit).
