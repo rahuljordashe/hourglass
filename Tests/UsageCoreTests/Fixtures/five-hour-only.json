@@ -1,0 +1,6 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555555",
+  "version": "2.1.287",
+  "cost": { "total_api_duration_ms": 9100 },
+  "rate_limits": { "five_hour": { "used_percentage": 31, "resets_at": 1790985600 } }
+}
