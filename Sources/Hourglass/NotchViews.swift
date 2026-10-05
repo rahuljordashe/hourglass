@@ -583,7 +583,9 @@ struct RestingView: View {
                             FigureAnchor(figure: figure, context: context)
                         }
                     }
-                    .frame(width: NotchGeometry.earWidth)
+                    // Anchored to the notch edge, like the countdown on the other side.
+                    .padding(.trailing, NotchGeometry.ringEarGap)
+                    .frame(width: NotchGeometry.earWidth, alignment: .trailing)
                     .opacity(ui.isHovered ? 1 : 0.88)
                     .transition(.opacity)
             }
@@ -591,7 +593,9 @@ struct RestingView: View {
             if !ui.earsHidden {
                 // Right ear: time until the 5-hour reset. Changes once a minute, never animated.
                 Text(ready ? "Ready" : UsageFormat.countdown(five?.timeUntilReset))
-                    .font(.system(size: ready ? 11 : 12.5, weight: ready ? .medium : .regular))
+                    // 11.7 pt is the largest at which "4h59" fits beside the gap unscaled, so "1h00"
+                    // and "59m" stay the same size (scaling only the wider form made the text jump).
+                    .font(.system(size: ready ? 11 : 11.7, weight: ready ? .medium : .regular))
                     .monospacedDigit()
                     .foregroundStyle(ready ? Theme.ready : stale ? Theme.stale : Theme.normal)
                     .lineLimit(1)
@@ -599,7 +603,8 @@ struct RestingView: View {
                     .contentTransition(.identity)
                     .transaction { $0.animation = nil }
                     .opacity(ui.isHovered ? 1 : 0.88)
-                    .frame(width: NotchGeometry.earWidth)
+                    .padding(.leading, NotchGeometry.earGap)
+                    .frame(width: NotchGeometry.earWidth, alignment: .leading)
                     .padding(.top, 1)
                     .transition(.opacity)
             }
