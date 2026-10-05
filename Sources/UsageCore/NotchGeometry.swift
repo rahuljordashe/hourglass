@@ -46,15 +46,19 @@ public struct NotchGeometry: Equatable, Sendable {
         CGRect(x: notchMidX - notchWidth / 2, y: screenFrame.maxY - notchHeight, width: notchWidth, height: notchHeight)
     }
 
-    /// Notch plus both ears: what the resting state covers.
-    public var restingRect: CGRect {
-        notchRect.insetBy(dx: -Self.earWidth, dy: 0)
+    /// Notch plus both ears: what the resting state covers. Each ear is 36 pt unless its item
+    /// needs more (a clock time takes 46 pt), so the two sides can differ.
+    public func restingRect(left: CGFloat = earWidth, right: CGFloat = earWidth) -> CGRect {
+        let notch = notchRect
+        return CGRect(x: notch.minX - left, y: notch.minY, width: notch.width + left + right, height: notch.height)
     }
+
+    public var restingRect: CGRect { restingRect() }
 
     /// The window at rest: exactly the resting shape plus its corner flares, so nothing else of
     /// the menu bar is covered. With `earsHidden` (watching video) it shrinks to the notch.
-    public func restingWindowFrame(earsHidden: Bool) -> CGRect {
-        let base = earsHidden ? notchRect : restingRect
+    public func restingWindowFrame(earsHidden: Bool, left: CGFloat = earWidth, right: CGFloat = earWidth) -> CGRect {
+        let base = earsHidden ? notchRect : restingRect(left: left, right: right)
         return snapped(base.insetBy(dx: -Self.flare, dy: 0))
     }
 
