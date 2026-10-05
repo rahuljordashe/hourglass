@@ -13,7 +13,16 @@ and never calls Anthropic itself.
 > falls back to `claude -p "/usage"`, and if that also changes, the notch shows the last reading
 > with its age rather than wrong numbers. Expect to update the app when Claude Code changes.
 
-![The expanded notch](screenshots/open.png)
+Most of the time it sits beside the notch like this: two rings on the left for the 5-hour and
+weekly limits, and the time until the 5-hour reset on the right.
+
+![Hourglass at rest beside the notch](screenshots/rest.png)
+
+Hover for a quick look at both limits, or click to open the full view:
+
+| Hover | Click |
+| --- | --- |
+| <img src="screenshots/peek.png" alt="The hover view: 5-hour and weekly percentages" width="400"> | <img src="screenshots/open.png" alt="The expanded notch" width="400"> |
 
 ## What it shows
 

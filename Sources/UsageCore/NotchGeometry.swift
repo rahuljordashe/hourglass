@@ -14,6 +14,12 @@ public struct NotchGeometry: Equatable, Sendable {
 
     /// The resting indicators sit beside the notch, this wide on each side, never below it.
     public static let earWidth: CGFloat = 36
+    /// Distance from the notch's edge to the ear content, the same on both sides, with the content
+    /// growing outwards from there (never centred in the ear, or the gap changes with its width).
+    /// The ring sits 1 pt closer: a round edge looks further away than the straight edge of text.
+    public static let earGap: CGFloat = 7
+    public static let ringEarGap: CGFloat = 6
+
     /// Room for the concave "flare" at the panel's top corners, outside the content.
     public static let flare: CGFloat = 8
     /// The largest the open panel gets; the window takes this size whenever it isn't at rest.
