@@ -50,7 +50,11 @@ final class NotchPanel: NSPanel {
     /// The canvas's frame in the window, for converting SwiftUI coordinates to the screen.
     var canvasFrame: CGRect { host?.frame ?? .zero }
 
-    override var canBecomeKey: Bool { true }
+    /// Never key: clicks work through `acceptsFirstMouse`, and the panel never takes keyboard
+    /// focus from your app. When it could become key, clicking elsewhere made it resign key just
+    /// as it shrank, and macOS animated that change with a stretched snapshot of the window
+    /// (the panel seemed to pop back out after closing).
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     /// Stay over the menu bar: never let AppKit push the frame below it.
@@ -61,8 +65,12 @@ final class NotchPanel: NSPanel {
         let origin = geometry.canvasOrigin(in: frame)
         guard frame != self.frame || host?.frame.origin != origin else { return }
         disableScreenUpdatesUntilFlush()
-        setFrame(frame, display: false, animate: false)
-        host?.setFrameOrigin(origin)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            setFrame(frame, display: false, animate: false)
+            host?.setFrameOrigin(origin)
+        }
         displayIfNeeded()
     }
 }

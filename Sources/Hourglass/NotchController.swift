@@ -140,7 +140,11 @@ final class NotchController {
         let outside = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.ui.mode != .compact, !self.isMenuOpen else { return }
-                if !self.hotRect().contains(NSEvent.mouseLocation) { self.go(.compact) }
+                if !self.hotRect().contains(NSEvent.mouseLocation) {
+                    // The same soft close as the pointer leaving, unless macOS is about to sweep
+                    // windows aside for "Click wallpaper to reveal desktop".
+                    if Self.clickRevealsDesktop { self.closeAtOnce() } else { self.go(.compact, because: "click outside") }
+                }
             }
         }
         mouseMonitors = [local, outside].compactMap { $0 }
@@ -238,11 +242,12 @@ final class NotchController {
             case .compact:
                 pendingTransition = Task { [weak self] in
                     try? await Task.sleep(for: Self.peekDwell)
-                    guard !Task.isCancelled else { return }
-                    self?.go(.peek) // hover never reads; it shows the cached numbers and their age
+                    // A click during the dwell already opened the panel: don't drop it to a peek.
+                    guard !Task.isCancelled, self?.ui.mode == .compact else { return }
+                    self?.go(.peek, because: "hover") // hover never reads; it shows the cached numbers and their age
                 }
             case .alert:
-                go(.peek)
+                go(.peek, because: "hover over alert")
             case .peek, .expanded:
                 break
             }
@@ -251,13 +256,13 @@ final class NotchController {
             pendingTransition = Task { [weak self] in
                 try? await Task.sleep(for: grace)
                 guard let self, !Task.isCancelled, !self.isMenuOpen else { return }
-                self.go(.compact)
+                self.go(.compact, because: "pointer left")
             }
         }
     }
 
-    func expand() { go(.expanded) }
-    func collapse() { go(.compact) }
+    func expand() { go(.expanded, because: "click") }
+    func collapse() { go(.compact, because: "collapse") }
 
     // MARK: Alerts
 
@@ -271,25 +276,50 @@ final class NotchController {
         // Never interrupt someone reading the open panel.
         guard ui.mode == .compact else { return }
         Log.ui.info("Alert: \(alert.title, privacy: .public)")
-        go(.alert(alert))
+        go(.alert(alert), because: "alert")
         alertDismissal?.cancel()
         alertDismissal = Task { [weak self] in
             try? await Task.sleep(for: Self.alertDuration)
             guard let self, !Task.isCancelled, case .alert = self.ui.mode else { return }
-            self.go(self.isHovering ? .peek : .compact)
+            self.go(self.isHovering ? .peek : .compact, because: "alert ended")
         }
     }
 
+    /// System Settings › Desktop & Dock › "Click wallpaper to reveal desktop" set to Always
+    /// (macOS's default when the setting has never been changed).
+    static var clickRevealsDesktop: Bool {
+        let value = CFPreferencesCopyAppValue("EnableStandardClickToShowDesktop" as CFString, "com.apple.WindowManager" as CFString)
+        return (value as? Bool) ?? true
+    }
+
+    /// With that setting on, a click elsewhere closes the panel instantly and shrinks the window
+    /// back into the menu bar band in the same moment. macOS sweeps every window that reaches into
+    /// the desktop aside on that click; if the open window was still there for the close
+    /// animation, it got swept too, which showed as a stretched pop.
+    private func closeAtOnce() {
+        guard let panel, let geometry, ui.mode != .compact else { return }
+        Log.ui.info("Mode \(String(describing: self.ui.mode), privacy: .public) → compact (click outside)")
+        pendingTransition?.cancel()
+        shrinkTask?.cancel()
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { ui.mode = .compact }
+        panel.place(geometry.restingWindowFrame(earsHidden: ui.earsHidden), geometry: geometry)
+        updateMouseState()
+    }
+
     /// Drives the notch from outside (sandbox debugging).
-    func debugGo(_ mode: NotchUIModel.Mode) { go(mode) }
+    func debugGo(_ mode: NotchUIModel.Mode) { go(mode, because: "debug") }
 
     // MARK: Transitions
 
-    private func go(_ mode: NotchUIModel.Mode) {
+    private func go(_ mode: NotchUIModel.Mode, because reason: String) {
         guard let panel, let geometry else { return }
         let previous = ui.mode
         guard previous != mode else { return }
-        Log.ui.debug("Mode \(String(describing: previous), privacy: .public) → \(String(describing: mode), privacy: .public)")
+        // Whatever was pending (a hover dwell, a close after the pointer left) is now stale.
+        if reason != "hover" && reason != "pointer left" { pendingTransition?.cancel() }
+        Log.ui.info("Mode \(String(describing: previous), privacy: .public) → \(String(describing: mode), privacy: .public) (\(reason, privacy: .public))")
         // Expanding shows cached numbers at once and reads if they're over two minutes old.
         if mode == .expanded { context.refresher.request(.expand) }
 
