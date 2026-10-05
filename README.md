@@ -13,6 +13,13 @@ and never calls Anthropic itself.
 > falls back to `claude -p "/usage"`, and if that also changes, the notch shows the last reading
 > with its age rather than wrong numbers. Expect to update the app when Claude Code changes.
 
+Most of the time it sits beside the notch like this: two rings on the left for the 5-hour and
+weekly limits, and the time until the 5-hour reset on the right.
+
+![Hourglass at rest beside the notch](screenshots/rest.png)
+
+Hover for a quick look, or click to open the full view:
+
 ![The expanded notch](screenshots/open.png)
 
 ## What it shows
