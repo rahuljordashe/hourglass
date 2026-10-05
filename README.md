@@ -18,9 +18,11 @@ weekly limits, and the time until the 5-hour reset on the right.
 
 ![Hourglass at rest beside the notch](screenshots/rest.png)
 
-Hover for a quick look, or click to open the full view:
+Hover for a quick look at both limits, or click to open the full view:
 
-![The expanded notch](screenshots/open.png)
+| Hover | Click |
+| --- | --- |
+| <img src="screenshots/peek.png" alt="The hover view: 5-hour and weekly percentages" width="400"> | <img src="screenshots/open.png" alt="The expanded notch" width="400"> |
 
 ## What it shows
 
