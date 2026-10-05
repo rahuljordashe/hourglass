@@ -39,8 +39,26 @@ final class NotchController {
     static let alertDuration: Duration = .seconds(5)
     static let hideForAnHour: TimeInterval = 3600
 
+    /// The one-time customise hint waits this long after the notch first appears.
+    static let hintDelay: Duration = .seconds(2)
+    static let hintDuration: Duration = .seconds(7)
+
     init(context: NotchContext) {
         self.context = context
+        context.ui.onLayoutCommitted = { [weak self] _ in self?.layoutChanged() }
+    }
+
+    /// The window at rest: the notch and both ears as the layout sizes them.
+    private func restingFrame(_ geometry: NotchGeometry, earsHidden: Bool? = nil) -> CGRect {
+        let layout = ui.layout
+        return geometry.restingWindowFrame(earsHidden: earsHidden ?? ui.earsHidden, left: layout.leftWidth, right: layout.rightWidth)
+    }
+
+    /// A saved layout can change an ear's width; at rest the window follows at once.
+    private func layoutChanged() {
+        guard ui.mode == .compact, let geometry else { return }
+        panel?.place(restingFrame(geometry), geometry: geometry)
+        updateMouseState()
     }
 
     var isShowing: Bool { panel != nil }
@@ -57,11 +75,13 @@ final class NotchController {
 
         let panel = NotchPanel(rootView: NotchRootView(context: context))
         panel.onPointerChange = { [weak self] in self?.updateMouseState() }
-        panel.place(geometry.restingWindowFrame(earsHidden: ui.earsHidden), geometry: geometry)
+        panel.onRightClick = { [weak self] point in self?.rightClicked(at: point) }
+        panel.place(restingFrame(geometry), geometry: geometry)
         panel.orderFrontRegardless()
         self.panel = panel
         startMouseTracking()
         Log.ui.info("Notch shown: \(Int(geometry.notchWidth))×\(Int(geometry.notchHeight)) pt")
+        scheduleHint()
     }
 
     func teardown() {
@@ -112,7 +132,7 @@ final class NotchController {
         let hidden = isWatchingVideo || ui.hiddenUntil != nil
         guard hidden != ui.earsHidden else { return }
         if !hidden, ui.mode == .compact, let geometry {
-            panel?.place(geometry.restingWindowFrame(earsHidden: false), geometry: geometry) // grow before fading in
+            panel?.place(restingFrame(geometry, earsHidden: false), geometry: geometry) // grow before fading in
         }
         withAnimation(ui.reduceMotion ? Motion.fade : .easeOut(duration: 0.3)) { ui.earsHidden = hidden }
         if hidden {
@@ -217,9 +237,9 @@ final class NotchController {
         guard let geometry, let panel else { return .zero }
         switch ui.mode {
         case .compact:
-            let base = ui.earsHidden ? geometry.notchRect : geometry.restingRect
+            let base = ui.earsHidden ? geometry.notchRect : geometry.restingRect(left: ui.layout.leftWidth, right: ui.layout.rightWidth)
             return base.insetBy(dx: -4, dy: 0).offsetBy(dx: 0, dy: -2).union(base)
-        case .peek, .expanded, .alert:
+        case .peek, .expanded, .alert, .editor, .hint:
             // SwiftUI reports the panel in canvas coordinates (origin top-left).
             let canvas = geometry.canvasScreenFrame(in: panel.frame), p = ui.panelFrame
             guard !p.isEmpty else { return geometry.restingRect }
@@ -248,10 +268,18 @@ final class NotchController {
                 }
             case .alert:
                 go(.peek, because: "hover over alert")
-            case .peek, .expanded:
+            case .peek, .expanded, .editor, .hint:
                 break
             }
-        } else if ui.mode != .compact, !isMenuOpen {
+        } else if ui.mode == .hint {
+            // The hint stays while you read it, and goes once the pointer leaves.
+            pendingTransition = Task { [weak self] in
+                try? await Task.sleep(for: Self.openGrace)
+                guard let self, !Task.isCancelled, self.ui.mode == .hint else { return }
+                self.go(.compact, because: "pointer left hint")
+            }
+        } else if ui.mode != .compact, ui.mode != .editor, !isMenuOpen {
+            // The editor stays open until Done or a click elsewhere.
             let grace = ui.mode == .expanded ? Self.openGrace : Self.peekGrace
             pendingTransition = Task { [weak self] in
                 try? await Task.sleep(for: grace)
@@ -263,6 +291,42 @@ final class NotchController {
 
     func expand() { go(.expanded, because: "click") }
     func collapse() { go(.compact, because: "collapse") }
+
+    // MARK: Editor
+
+    /// Opens the editor in place of the open panel, on the given tab.
+    func customise(_ tab: EditorTab = .faces) {
+        alertDismissal?.cancel()
+        ui.preview = nil
+        ui.editorTab = tab
+        go(.editor, because: "customise")
+    }
+
+    /// A right-click on the notch opens the editor; on an ear, at that ear's tab.
+    private func rightClicked(at point: CGPoint) {
+        guard let geometry, ui.mode != .editor else { return }
+        let notch = geometry.notchRect
+        let tab: EditorTab = ui.mode != .compact ? .faces : point.x < notch.minX ? .left : point.x > notch.maxX ? .right : .faces
+        customise(tab)
+    }
+
+    /// Once, a couple of seconds after the notch first appears with this version: a short note
+    /// that it can be customised. Skipped while hidden or busy, and tried again on the next show.
+    private func scheduleHint() {
+        guard !AppEnvironment.defaults.bool(forKey: LayoutDefaults.hintKey) else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.hintDelay)
+            guard let self, self.panel != nil, self.ui.mode == .compact, !self.ui.earsHidden,
+                  LayoutDefaults.takeHint() else { return }
+            self.go(.hint, because: "hint")
+            self.alertDismissal?.cancel()
+            self.alertDismissal = Task { [weak self] in
+                try? await Task.sleep(for: Self.hintDuration)
+                guard let self, !Task.isCancelled, self.ui.mode == .hint, !self.isHovering else { return }
+                self.go(.compact, because: "hint ended")
+            }
+        }
+    }
 
     // MARK: Alerts
 
@@ -303,8 +367,11 @@ final class NotchController {
         shrinkTask?.cancel()
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
-        withTransaction(transaction) { ui.mode = .compact }
-        panel.place(geometry.restingWindowFrame(earsHidden: ui.earsHidden), geometry: geometry)
+        withTransaction(transaction) {
+            ui.mode = .compact
+            ui.preview = nil
+        }
+        panel.place(restingFrame(geometry), geometry: geometry)
         updateMouseState()
     }
 
@@ -324,7 +391,10 @@ final class NotchController {
         if mode == .expanded { context.refresher.request(.expand) }
 
         if mode == .compact {
-            withAnimation(ui.reduceMotion ? Motion.fade : Motion.close) { ui.mode = .compact }
+            withAnimation(ui.reduceMotion ? Motion.fade : Motion.close) {
+                ui.mode = .compact
+                ui.preview = nil
+            }
             scheduleShrink(after: ui.reduceMotion ? 0.17 : 0.3)
         } else {
             shrinkTask?.cancel()
@@ -340,7 +410,7 @@ final class NotchController {
         shrinkTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard let self, !Task.isCancelled, self.ui.mode == .compact, let geometry = self.geometry else { return }
-            self.panel?.place(geometry.restingWindowFrame(earsHidden: self.ui.earsHidden), geometry: geometry)
+            self.panel?.place(self.restingFrame(geometry), geometry: geometry)
         }
     }
 }

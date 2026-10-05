@@ -7,6 +7,10 @@ final class NotchUIModel {
     enum Mode: Equatable {
         case compact, peek, expanded
         case alert(UsageAlert)
+        /// The notch editor: the open panel turns into it, with the real ears in its top row.
+        case editor
+        /// The one-time "you can customise this" note after installing.
+        case hint
     }
 
     var mode: Mode = .compact
@@ -20,6 +24,32 @@ final class NotchUIModel {
 
     /// The pointer is over the notch: an instant small response before the peek's dwell ends.
     var isHovered = false
+
+    /// What the notch shows, as saved.
+    private(set) var layout: NotchLayout = LayoutDefaults.load()
+    /// A tile or face under the pointer in the editor, shown on the ears until the pointer leaves.
+    var preview: NotchLayout?
+    /// What the ears show right now: the preview while trying something, otherwise the saved layout.
+    var shownLayout: NotchLayout { preview ?? layout }
+    var editorTab: EditorTab = .faces
+    /// Called after a new layout is saved, so the window can fit the ears.
+    @ObservationIgnored var onLayoutCommitted: ((NotchLayout) -> Void)?
+
+    /// Shows a layout without saving it, for drawing stills (`--render-previews`).
+    func useUnsaved(_ new: NotchLayout) {
+        layout = new
+    }
+
+    /// Saves a layout (changes are live; there's no separate save step) and ends any preview.
+    func commit(_ new: NotchLayout) {
+        preview = nil
+        guard new != layout else { return }
+        layout = new
+        LayoutDefaults.save(new)
+        // The hover figures rest on whichever ear now carries them.
+        slots = slots.filter { $0.key.tag != .rest }
+        onLayoutCommitted?(new)
+    }
     /// Where the 5-hour and weekly figures sit in each mode, measured from the layout. The
     /// figures are drawn once, above every mode, and travel between these.
     private(set) var slots: [FigureSlotKey: CGRect] = [:]
@@ -34,8 +64,8 @@ final class NotchUIModel {
         switch mode {
         case .compact: .rest
         case .peek: .peek
-        case .expanded: .open
-        case .alert: .alert
+        case .expanded, .editor: .open
+        case .alert, .hint: .alert
         }
     }
 
@@ -86,6 +116,7 @@ struct NotchActions {
     var expand: () -> Void
     var collapse: () -> Void
     var toggleHideForAnHour: () -> Void
+    var customise: () -> Void = {}
     var quit: () -> Void
 }
 
@@ -156,7 +187,8 @@ struct NotchRootView: View {
         let top: CGFloat = isOpen ? NotchGeometry.flare : 6
         let bottom: CGFloat = isOpen ? 20 : 10
         // Travelling figures, unless Reduce Motion asks for cross-fades (or we're drawing a still).
-        let overlaid = !ui.reduceMotion && !isStatic
+        // The editor draws its own copies of the panels, so it has none.
+        let overlaid = !ui.reduceMotion && !isStatic && ui.mode != .editor
 
         content
             .environment(\.figuresOverlaid, overlaid)
@@ -173,6 +205,9 @@ struct NotchRootView: View {
                     .padding(.horizontal, -top)
                     .shadow(color: .black.opacity(isOpen ? 0.45 : 0), radius: 18, y: 10)
             }
+            // At rest a wider ear (a clock time) makes the shape lopsided: shift it so the notch
+            // gap stays over the camera.
+            .offset(x: ui.mode == .compact && !ui.earsHidden ? (ui.layout.rightWidth - ui.layout.leftWidth) / 2 : 0)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { ui.panelFrame = $0 }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .foregroundStyle(Theme.normal)
@@ -183,12 +218,13 @@ struct NotchRootView: View {
         let ui = context.ui
         switch ui.mode {
         case .compact:
-            let rest = ui.earsHidden ? ui.notchWidth : ui.notchWidth + 2 * NotchGeometry.earWidth
+            let rest = ui.earsHidden ? ui.notchWidth : ui.notchWidth + ui.layout.leftWidth + ui.layout.rightWidth
             // The instant hover response: a 1.5 pt swell each side (within the window's flare room).
             return rest + (ui.isHovered && !ui.reduceMotion ? 3 : 0)
         case .peek: return 320
         case .expanded: return 400
-        case .alert: return 340
+        case .alert, .hint: return 340
+        case .editor: return NotchGeometry.openSize.width
         }
     }
 
@@ -208,6 +244,10 @@ struct NotchRootView: View {
             ExpandedView(context: context, showsNotchGap: true).transition(Self.modeTransition)
         case .alert(let alert):
             AlertView(context: context, alert: alert).transition(Self.modeTransition)
+        case .editor:
+            NotchEditorView(context: context).transition(Self.modeTransition)
+        case .hint:
+            HintView(context: context).transition(Self.modeTransition)
         }
     }
 
@@ -349,8 +389,8 @@ struct FiguresLayer: View {
 
     private var behindCamera: CGRect {
         let ui = context.ui
-        let width = ui.earsHidden ? ui.notchWidth : ui.notchWidth + 2 * NotchGeometry.earWidth
-        return CGRect(x: width / 2 - 10, y: ui.notchHeight / 2 - 8, width: 20, height: 16)
+        let midX = (ui.earsHidden ? 0 : ui.layout.leftWidth) + ui.notchWidth / 2
+        return CGRect(x: midX - 10, y: ui.notchHeight / 2 - 8, width: 20, height: 16)
     }
 }
 
@@ -558,55 +598,23 @@ struct FigureAnchor: View {
     }
 }
 
-/// At rest: a short usage line in the left ear and the 5-hour figure in the right ear, nothing
-/// below the notch. Nothing animates unless a reading changes it.
+/// At rest: whatever the layout puts in each ear (a ring pair on the left and the countdown on the
+/// right by default), nothing below the notch. Nothing animates unless a reading changes it.
 struct RestingView: View {
     let context: NotchContext
 
     var body: some View {
         let ui = context.ui
         let state = context.store.state
-        let five = state.fiveHour
-        let ready = state.isReady(.fiveHour)
-        let stale = state.freshness == .stale || state.freshness == .none
-        let color = ready ? Theme.ready : Shade.color(five?.level ?? .normal, stale: stale)
+        let layout = ui.layout
 
         return HStack(spacing: 0) {
             if !ui.earsHidden {
-                // Left ear: 5-hour usage on the outer ring, weekly on the inner one.
-                RingPair(five: ready ? 0 : five?.fraction, weekly: state.isReady(.sevenDay) ? 0 : state.sevenDay?.fraction,
-                         outer: color, inner: stale ? Theme.stale : Theme.normal.opacity(0.55), memory: ui)
-                    .frame(width: 18, height: 18)
-                    .overlay {
-                        // Where the hover figures start from.
-                        ForEach(Figure.allCases, id: \.self) { figure in
-                            FigureAnchor(figure: figure, context: context)
-                        }
-                    }
-                    // Anchored to the notch edge, like the countdown on the other side.
-                    .padding(.trailing, NotchGeometry.ringEarGap)
-                    .frame(width: NotchGeometry.earWidth, alignment: .trailing)
-                    .opacity(ui.isHovered ? 1 : 0.88)
-                    .transition(.opacity)
+                ear(.left, layout)
             }
             Color.clear.frame(width: ui.notchWidth)
             if !ui.earsHidden {
-                // Right ear: time until the 5-hour reset. Changes once a minute, never animated.
-                Text(ready ? "Ready" : UsageFormat.countdown(five?.timeUntilReset))
-                    // 11.7 pt is the largest at which "4h59" fits beside the gap unscaled, so "1h00"
-                    // and "59m" stay the same size (scaling only the wider form made the text jump).
-                    .font(.system(size: ready ? 11 : 11.7, weight: ready ? .medium : .regular))
-                    .monospacedDigit()
-                    .foregroundStyle(ready ? Theme.ready : stale ? Theme.stale : Theme.normal)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .contentTransition(.identity)
-                    .transaction { $0.animation = nil }
-                    .opacity(ui.isHovered ? 1 : 0.88)
-                    .padding(.leading, NotchGeometry.earGap)
-                    .frame(width: NotchGeometry.earWidth, alignment: .leading)
-                    .padding(.top, 1)
-                    .transition(.opacity)
+                ear(.right, layout)
             }
         }
         .padding(.horizontal, ui.isHovered && !ui.reduceMotion ? 1.5 : 0)
@@ -614,13 +622,32 @@ struct RestingView: View {
         .contentShape(Rectangle())
         .onTapGesture { context.actions.expand() }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(CompactAccessibility.label(state))
+        .accessibilityLabel(CompactAccessibility.label(state, layout: layout, now: context.store.now))
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { context.actions.expand() }
+        .accessibilityAction(named: "Customise notch") { context.actions.customise() }
+    }
+
+    private func ear(_ side: NotchLayout.Side, _ layout: NotchLayout) -> some View {
+        let ui = context.ui
+        let figures = Figure.allCases.filter { Self.anchorSide(for: $0, in: layout) == side }
+        // The hover figures grow out of the ear that shows them.
+        return EarItemView(item: layout[side], side: side, state: context.store.state, now: context.store.now, memory: ui,
+                           anchors: figures, context: context)
+            .opacity(ui.isHovered ? 1 : 0.88)
+            .transition(.opacity)
+    }
+
+    /// The ear a hover figure grows out of: the first that shows it, else the first that shows
+    /// anything. Nil leaves it behind the camera.
+    static func anchorSide(for figure: Figure, in layout: NotchLayout) -> NotchLayout.Side? {
+        NotchLayout.Side.allCases.first { layout[$0].carries(figure.window) }
+            ?? NotchLayout.Side.allCases.first { layout[$0] != .nothing }
     }
 }
 
 enum CompactAccessibility {
+    /// The full reading, for the menu bar pill.
     static func label(_ state: UsageState) -> String {
         guard state.hasData else { return "Claude usage. No reading yet." }
         var parts = ["Claude usage."]
@@ -635,16 +662,36 @@ enum CompactAccessibility {
         if let age = state.age { parts.append("Updated \(UsageFormat.age(age)).") }
         return parts.joined(separator: " ")
     }
+
+    /// What the two ears show, in the chosen layout.
+    static func label(_ state: UsageState, layout: NotchLayout, now: Date) -> String {
+        guard state.hasData else { return "Claude usage. No reading yet." }
+        var spoken: [String] = []
+        for item in [layout.left, layout.right] {
+            if let text = item.spoken(state, now: now), !spoken.contains(text) { spoken.append(text) }
+        }
+        var parts = ["Claude usage."]
+        if spoken.isEmpty {
+            parts.append("Nothing shown beside the notch.")
+        } else {
+            parts += spoken.map { $0.prefix(1).uppercased() + $0.dropFirst() + "." }
+        }
+        if let age = state.age { parts.append("Updated \(UsageFormat.age(age)).") }
+        return parts.joined(separator: " ")
+    }
 }
 
 // MARK: - Peek (hover)
 
 struct PeekView: View {
     let context: NotchContext
+    /// Drawn as a copy in the editor's Hover tab: no room for the camera, no click to open.
+    var inEditor = false
 
     var body: some View {
         let state = context.store.state
         let rm = context.ui.reduceMotion
+        let options = context.ui.layout.hover
         VStack(alignment: .leading, spacing: 12) {
             if state.hasData {
                 HStack(alignment: .center, spacing: 18) {
@@ -653,19 +700,37 @@ struct PeekView: View {
                     PeekCell(figure: .weekly, context: context)
                 }
                 .fixedSize(horizontal: false, vertical: true)
+                if options.budgetLine, let budget = WeeklyBudget.make(weekly: state.sevenDay, now: context.store.now) {
+                    BudgetLine(budget: budget).entrance(1, rm)
+                }
                 StatusLine(context: context).entrance(1, rm)
             } else {
                 EmptyStateView(refresher: context.refresher, compact: true).entrance(0, rm)
             }
         }
-        .padding(.top, context.ui.notchHeight + 8)
+        .padding(.top, inEditor ? 14 : context.ui.notchHeight + 8)
         .padding(.horizontal, 22)
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { context.actions.expand() }
+        .onTapGesture { if !inEditor { context.actions.expand() } }
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Click for details")
+        .accessibilityHint(inEditor ? "" : "Click for details")
+    }
+}
+
+/// The weekly budget in one line, for the hover peek: "Weekly budget · about 14% a day".
+struct BudgetLine: View {
+    let budget: WeeklyBudget
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("Weekly budget").foregroundStyle(Color.white.opacity(0.48))
+            Text(BudgetCard.mainLine(budget.line))
+                .foregroundStyle(budget.line == .exhausted ? Theme.critical : Theme.normal.opacity(0.85))
+        }
+        .font(.system(size: 11))
+        .lineLimit(1)
     }
 }
 
@@ -680,6 +745,7 @@ struct PeekCell: View {
         let status = state.window(kind)
         let ready = state.isReady(kind)
         let rm = context.ui.reduceMotion
+        let options = context.ui.layout.hover
         VStack(alignment: .leading, spacing: 2) {
             Text(kind.title)
                 .font(.system(size: 11, weight: .medium))
@@ -694,10 +760,18 @@ struct PeekCell: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Color.white.opacity(0.48))
                 .entrance(1, rm)
+            if options.resetTimes, !ready, let status {
+                // The other half of the reset: the clock time for 5 hours, the time left for the week.
+                Text(kind == .fiveHour ? "at \(UsageFormat.clock(status.resetsAt, now: now))"
+                                       : "in \(UsageFormat.duration(status.timeUntilReset))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.white.opacity(0.38))
+                    .entrance(1, rm)
+            }
             // Fill = usage. Tick = how much of the window's time has passed.
             HairBar(fraction: ready ? 0 : status?.fraction ?? 0,
                     color: ready ? Theme.ready : Shade.color(status?.level ?? .normal, stale: state.freshness == .stale),
-                    paceMark: (ready || status?.isReset != false) ? nil : status?.elapsedFraction,
+                    paceMark: (ready || status?.isReset != false || !options.timeTick) ? nil : status?.elapsedFraction,
                     reduceMotion: rm, key: "bar-\(kind.rawValue)", memory: context.ui)
                 .padding(.top, 6)
                 .entrance(1, rm, soft: true)
@@ -750,15 +824,10 @@ struct ExpandedView: View {
                     // These two carry on from the hover view: their figures travel, the rest fades.
                     LimitRow(figure: .fiveHour, context: context)
                     LimitRow(figure: .weekly, context: context)
-                    if let budget = WeeklyBudget.make(weekly: state.sevenDay, now: now) {
-                        BudgetCard(budget: budget, now: now).entrance(3, rm)
-                    }
-                    // New on opening: these get the staggered entrance.
-                    if !state.scoped.isEmpty {
-                        ModelSection(rows: state.scoped, stale: state.freshness == .stale, ui: context.ui).entrance(4, rm)
-                    }
-                    if state.credits != nil || !state.promos.isEmpty {
-                        CreditsSection(credits: state.credits, promos: state.promos, now: now, ui: context.ui).entrance(5, rm)
+                    // New on opening: these get the staggered entrance, in the order chosen.
+                    ForEach(Array(context.ui.layout.open.visible.enumerated()), id: \.element) { index, section in
+                        OpenSectionView(section: section, context: context, now: now)
+                            .entrance(3 + index, rm)
                     }
                 } else {
                     EmptyStateView(refresher: context.refresher).entrance(1, rm)
@@ -787,7 +856,7 @@ struct ExpandedView: View {
 
             HStack(spacing: 2) {
                 RefreshButton(refresher: context.refresher)
-                SettingsMenu(context: context)
+                SettingsMenu(context: context, canCustomise: showsNotchGap)
             }
             .padding(.trailing, 10)
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -893,8 +962,10 @@ struct BudgetCard: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var mainLine: String {
-        switch budget.line {
+    private var mainLine: String { Self.mainLine(budget.line) }
+
+    static func mainLine(_ line: WeeklyBudget.Line) -> String {
+        switch line {
         case .perDay(let n): "about \(n)% a day"
         case .leftUntilReset(let n): "\(n)% left until reset"
         case .exhausted: "No weekly budget left"
@@ -930,6 +1001,39 @@ struct DayStrip: View {
             }
         }
         .frame(height: 20)
+    }
+}
+
+/// One of the open panel's optional sections, or nothing when it has no data yet.
+struct OpenSectionView: View {
+    let section: OpenLayout.Section
+    let context: NotchContext
+    let now: Date
+
+    var body: some View {
+        let state = context.store.state
+        switch section {
+        case .budget:
+            if let budget = WeeklyBudget.make(weekly: state.sevenDay, now: now) {
+                BudgetCard(budget: budget, now: now)
+            }
+        case .byModel:
+            if !state.scoped.isEmpty {
+                ModelSection(rows: state.scoped, stale: state.freshness == .stale, ui: context.ui)
+            }
+        case .credits:
+            if state.credits != nil || !state.promos.isEmpty {
+                CreditsSection(credits: state.credits, promos: state.promos, now: now, ui: context.ui)
+            }
+        }
+    }
+
+    static func hasContent(_ section: OpenLayout.Section, state: UsageState, now: Date) -> Bool {
+        switch section {
+        case .budget: WeeklyBudget.make(weekly: state.sevenDay, now: now) != nil
+        case .byModel: !state.scoped.isEmpty
+        case .credits: state.credits != nil || !state.promos.isEmpty
+        }
     }
 }
 
@@ -1062,6 +1166,8 @@ struct RefreshButton: View {
 
 struct SettingsMenu: View {
     let context: NotchContext
+    /// Only on the notch: the menu bar pill has no ears to customise.
+    var canCustomise = true
 
     var body: some View {
         Menu {
@@ -1069,6 +1175,9 @@ struct SettingsMenu: View {
                 .disabled(context.refresher.isReading)
             Text("\(context.refresher.readsInLastHour(now: context.store.now)) of \(context.refresher.hourlyCap) reads used this hour")
             Divider()
+            if canCustomise {
+                Button("Customise notch…") { context.actions.customise() }
+            }
             Button(context.ui.hiddenUntil == nil ? "Hide for 1 hour" : "Show again") { context.actions.toggleHideForAnHour() }
             Toggle("Launch at login", isOn: Binding(
                 get: { context.loginItem.isEnabled },

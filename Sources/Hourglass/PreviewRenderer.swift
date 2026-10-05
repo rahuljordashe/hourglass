@@ -18,9 +18,23 @@ enum PreviewRenderer {
         if let five = state.fiveHour {
             modes.append(("alert", .alert(UsageAlert(window: .fiveHour, kind: .threshold(75), percentage: five.percentage, resetsAt: five.resetsAt)), false))
         }
+        var editorTabs: [String: EditorTab] = [:]
+        for tab in EditorTab.allCases {
+            modes.append(("editor-\(tab.rawValue)", .editor, false))
+            editorTabs["editor-\(tab.rawValue)"] = tab
+        }
+        modes.append(("hint", .hint, false))
+        for face in Face.allCases where face != .rings {
+            modes.append(("rest-face-\(face.rawValue)", .compact, false))
+        }
         for (name, mode, hidden) in modes {
             ui.mode = mode
             ui.earsHidden = hidden
+            if let tab = editorTabs[name] { ui.editorTab = tab }
+            let face = Face.allCases.first { name == "rest-face-\($0.rawValue)" }
+            let saved = ui.layout
+            ui.useUnsaved(face.map { saved.with($0) } ?? saved)
+            defer { ui.useUnsaved(saved) }
             let size = mode == .compact ? CGSize(width: 300, height: 32) : NotchGeometry.openSize
             let view = NotchRootView(context: context)
                 .environment(\.isStaticRender, true)

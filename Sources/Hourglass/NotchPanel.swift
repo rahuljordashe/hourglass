@@ -26,6 +26,10 @@ final class NotchPanel: NSPanel {
         // The SwiftUI canvas has a fixed size and is never re-laid out when the window changes;
         // `place` only moves it within the window so it stays put on screen.
         let host = FirstMouseHostingView(rootView: rootView)
+        host.onRightClick = { [weak self] event in
+            guard let self else { return }
+            self.onRightClick?(self.convertPoint(toScreen: event.locationInWindow))
+        }
         host.sizingOptions = []
         host.autoresizingMask = []
         host.frame = CGRect(origin: .zero, size: NotchGeometry.canvasSize)
@@ -39,6 +43,9 @@ final class NotchPanel: NSPanel {
     }
 
     private var host: NSView?
+
+    /// A right-click anywhere on the panel, with where it was in screen coordinates.
+    var onRightClick: ((CGPoint) -> Void)?
 
     /// Called when the pointer enters or leaves the window. At rest the window is exactly the
     /// hover zone, so this replaces listening to every mouse move on the screen.
@@ -77,7 +84,13 @@ final class NotchPanel: NSPanel {
 
 /// Buttons in the panel work on the first click, without the panel having to become key first.
 final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    var onRightClick: ((NSEvent) -> Void)?
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if let onRightClick { onRightClick(event) } else { super.rightMouseDown(with: event) }
+    }
 }
 
 /// Reports the pointer entering and leaving its bounds, whether or not the app is active.
