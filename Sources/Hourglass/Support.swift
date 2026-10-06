@@ -21,6 +21,31 @@ enum AppEnvironment {
         : .standard
 }
 
+/// The notch layout, kept in the app's own defaults on this Mac and nowhere else.
+enum LayoutDefaults {
+    static let layoutKey = "notchLayout"
+    static let hintKey = "didShowCustomiseHint"
+
+    static func load() -> NotchLayout {
+        NotchLayout.decode(AppEnvironment.defaults.data(forKey: layoutKey))
+    }
+
+    static func save(_ layout: NotchLayout) {
+        if layout == .default {
+            AppEnvironment.defaults.removeObject(forKey: layoutKey)
+        } else if let data = layout.encoded() {
+            AppEnvironment.defaults.set(data, forKey: layoutKey)
+        }
+    }
+
+    /// The one-time customise hint: true the first time it's asked, then never again.
+    static func takeHint() -> Bool {
+        guard !AppEnvironment.defaults.bool(forKey: hintKey) else { return false }
+        AppEnvironment.defaults.set(true, forKey: hintKey)
+        return true
+    }
+}
+
 enum Links {
     static let usageSettings = URL(string: "https://claude.ai/settings/usage")!
 }
@@ -37,6 +62,8 @@ enum Theme {
     static let secondary = Color.white.opacity(0.58)
     static let tertiary = Color.white.opacity(0.38)
     static let card = Color.white.opacity(0.06)
+    /// The editor's selection and Done button: macOS's dark-mode blue.
+    static let accent = Color(red: 0.039, green: 0.518, blue: 1.0)    // #0A84FF
 
     static func color(for level: UsageLevel) -> Color {
         switch level {

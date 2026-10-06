@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             expand: { [weak self] in self?.notchController.expand() },
             collapse: { [weak self] in self?.notchController.collapse() },
             toggleHideForAnHour: { [weak self] in self?.notchController.toggleHideForAnHour() },
+            customise: { [weak self] in self?.notchController.customise() },
             quit: { NSApp.terminate(nil) }
         )
         let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, actions: actions)
@@ -76,6 +77,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "compact": self.notchController.debugGo(.compact)
                 case "peek": self.notchController.debugGo(.peek)
                 case "expanded": self.notchController.debugGo(.expanded)
+                case "editor": self.notchController.customise()
+                case "editor-left": self.notchController.customise(.left)
+                case "editor-right": self.notchController.customise(.right)
+                case "editor-hover": self.notchController.customise(.hover)
+                case "editor-open": self.notchController.customise(.open)
+                case "hint": self.notchController.debugGo(.hint)
                 case "refresh": self.refresher.request(.manual)
                 case "alert":
                     let state = self.store.state

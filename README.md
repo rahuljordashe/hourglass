@@ -42,6 +42,23 @@ YouTube or Stremio), the resting indicators fade out and come back 3 seconds aft
 Hover still works, and alerts wait until the video ends. **Hide for 1 hour** in the ••• menu does
 the same by hand.
 
+## Customise the notch
+
+Right-click the notch, or choose **Customise notch…** in the ••• menu, and the open panel turns
+into an editor. Its top row keeps both ears where they rest, so what you try shows on the real
+notch: hover a choice to see it on the ears, move away to put the saved one back, click to keep
+it. Changes save as you make them, so **Done** only closes the editor.
+
+| Tab | What you choose |
+| --- | --- |
+| Faces | A look for both ears: Rings (ring pair and countdown, the default), Numbers (5-hour % and weekly %), Time first (5-hour % and countdown), Bars (mini bars and 5-hour %), Clock (5-hour ring and reset time) or Quiet (a warning dot and nothing else). |
+| Left ear, Right ear | Any item in either ear: ring pair, 5-hour ring, 5-hour %, weekly %, both %, reset countdown, reset clock time, mini bars (5-hour over weekly), time wedge, a warning dot (only from 70%) or nothing. Ears are 36 pt; the reset clock time needs 46 pt, so that ear widens and may cover a menu bar icon. |
+| Hover | The time tick on the bars (on), a weekly budget line (off) and reset times (off), with a live copy of the peek. |
+| Open | Show, hide and reorder the weekly budget, weekly by model and usage credits sections. The 5-hour and weekly rows always stay at the top. |
+
+**Reset to default** brings back the original layout. Your choices are kept in the app's own
+preferences on this Mac; nothing new is read or sent.
+
 ## How the data gets there
 
 Each read launches `~/.local/bin/claude` once, hardened:
