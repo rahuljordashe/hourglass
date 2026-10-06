@@ -64,8 +64,8 @@ struct NotchGeometryTests {
 
 @Suite("Hiding while watching video")
 struct VideoSignalTests {
-    private func assertion(_ type: String, level: Int = 255) -> [String: Any] {
-        ["AssertType": type, "AssertLevel": NSNumber(value: level)]
+    private func assertion(_ type: String, level: Int = 255, name: String = "Video Wake Lock") -> [String: Any] {
+        ["AssertType": type, "AssertLevel": NSNumber(value: level), "AssertName": name]
     }
 
     @Test func displayAwakeRequestsCountExceptKeepAwakeTools() {
@@ -81,6 +81,19 @@ struct VideoSignalTests {
         let holders = VideoSignal.holders(byProcess, ownPid: 14) { names[$0] }
         #expect(holders == ["Google Chrome Helper", "Stremio"])
         #expect(VideoSignal.holders([:], ownPid: 1) { _ in nil }.isEmpty)
+    }
+
+    @Test func callsAndNoteTakersAreNotVideo() {
+        let names: [Int32: String] = [20: "Microsoft Teams", 21: "Wispr Flow", 22: "Some Call App", 23: "zoom.us", 24: "Google Chrome", 25: "Recallr"]
+        let byProcess: [Int32: [[String: Any]]] = [
+            20: [assertion("NoDisplaySleepAssertion", name: "Microsoft Teams Call in progress")],
+            21: [assertion("NoDisplaySleepAssertion", name: "Electron")],
+            22: [assertion("PreventUserIdleDisplaySleep", name: "Meeting in progress")],
+            23: [assertion("PreventUserIdleDisplaySleep")],
+            24: [assertion("PreventUserIdleDisplaySleep", name: "Video Wake Lock")],
+            25: [assertion("PreventUserIdleDisplaySleep", name: "Recalling playback")] // "call" inside a word isn't a call
+        ]
+        #expect(VideoSignal.holders(byProcess, ownPid: 1) { names[$0] } == ["Google Chrome", "Recallr"])
     }
 
     @Test func hidesAtOnceAndReturnsThreeSecondsAfterStopping() {
