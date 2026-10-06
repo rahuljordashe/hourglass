@@ -39,6 +39,9 @@ item with the same expanded view in a popover.
 
 While a video plays (any app asking macOS to keep the display awake, such as a browser playing
 YouTube or Stremio), the resting indicators fade out and come back 3 seconds after it stops.
+Calls and meeting note-takers keep the display awake too but don't count: Teams, Zoom, Webex,
+FaceTime, Slack, Discord, Wispr Flow and Granola are ignored, as is any request that calls itself
+a call or meeting. A call in a browser tab (Google Meet) can still look like a video.
 Hover still works, and alerts wait until the video ends. **Hide for 1 hour** in the ••• menu does
 the same by hand.
 

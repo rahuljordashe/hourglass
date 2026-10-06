@@ -4,15 +4,30 @@ import Foundation
 ///
 /// Video players and browsers ask macOS to keep the display awake while a video plays
 /// (`PreventUserIdleDisplaySleep`). Reading who holds that needs no permission. Keep-awake
-/// utilities ask too, so they're ignored by name.
+/// utilities, call apps and meeting note-takers ask too, so they're ignored by name, and so is
+/// any request that names itself a call or meeting (Teams says "Microsoft Teams Call in progress").
 public enum VideoSignal {
     public static let displaySleepTypes: Set<String> = ["PreventUserIdleDisplaySleep", "NoDisplaySleepAssertion"]
 
     /// Processes whose display-awake requests aren't video.
     public static let ignoredProcesses: Set<String> = [
         "caffeinate", "Amphetamine", "KeepingYouAwake", "Lungo", "Theine", "Caffeine",
-        "powerd", "WindowServer", "loginwindow", "Hourglass"
+        "powerd", "WindowServer", "loginwindow", "Hourglass",
+        // Calls: the screen stays awake for the whole meeting, whether or not anyone's on video.
+        "Microsoft Teams", "MSTeams", "Microsoft Teams (work or school)", "Microsoft Teams classic",
+        "zoom.us", "Webex", "Cisco Webex Meetings", "FaceTime", "Slack", "Discord", "Skype", "Around", "Tuple",
+        // Meeting note-takers and dictation, which hold it while they listen.
+        "Wispr Flow", "Granola", "Krisp", "Otter"
     ]
+
+    /// Words in an assertion's own name that mark it as a call, not a video.
+    public static let callWords: Set<String> = ["call", "calls", "meeting", "meetings", "conference"]
+
+    static func isCall(_ assertionName: String?) -> Bool {
+        guard let assertionName else { return false }
+        let words = assertionName.lowercased().split { !$0.isLetter }
+        return words.contains { callWords.contains(String($0)) }
+    }
 
     /// Names of processes holding a display-awake assertion, from `IOPMCopyAssertionsByProcess`'s
     /// dictionary (pid to a list of assertion dictionaries).
@@ -27,7 +42,7 @@ public enum VideoSignal {
                 guard let type = assertion["AssertType"] as? String, displaySleepTypes.contains(type) else { return false }
                 // Level 0 means the assertion is switched off.
                 if let level = (assertion["AssertLevel"] as? NSNumber)?.intValue, level == 0 { return false }
-                return true
+                return !isCall(assertion["AssertName"] as? String)
             }
             guard holds else { continue }
             let processName = name(pid) ?? (assertions.first?["Process Name"] as? String) ?? "pid \(pid)"
