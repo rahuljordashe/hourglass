@@ -11,7 +11,7 @@ struct NotchLayoutTests {
         #expect(layout.right == .countdown)
         #expect(layout.face == .rings)
         #expect(layout.hover == HoverOptions(timeTick: true, budgetLine: false, resetTimes: false))
-        #expect(layout.open.visible == [.budget, .lastSevenDays, .byModel, .credits])
+        #expect(layout.open.visible == [.budget, .thisWeek, .byModel, .credits])
         #expect(layout.leftWidth == 36)
         #expect(layout.rightWidth == 36)
     }
@@ -74,7 +74,7 @@ struct NotchLayoutTests {
         #expect(layout.left == .ringPair)
         #expect(layout.right == .resetClock)
         #expect(layout.hover == HoverOptions(timeTick: true, budgetLine: true, resetTimes: false))
-        #expect(layout.open.order == [.credits, .budget, .lastSevenDays, .byModel])
+        #expect(layout.open.order == [.credits, .budget, .thisWeek, .byModel])
         #expect(layout.open.hidden == [.byModel])
     }
 
@@ -83,25 +83,25 @@ struct NotchLayoutTests {
         #expect(!open.canMove(.budget, by: -1))
         #expect(open.canMove(.budget, by: 1))
         open.move(.budget, by: -1) // already first: nothing happens
-        #expect(open.order == [.budget, .lastSevenDays, .byModel, .credits])
+        #expect(open.order == [.budget, .thisWeek, .byModel, .credits])
         open.move(.credits, by: -1)
-        #expect(open.order == [.budget, .lastSevenDays, .credits, .byModel])
+        #expect(open.order == [.budget, .thisWeek, .credits, .byModel])
         open.move(.byModel, by: 1) // already last
-        #expect(open.order == [.budget, .lastSevenDays, .credits, .byModel])
+        #expect(open.order == [.budget, .thisWeek, .credits, .byModel])
         open.setShown(.credits, false)
-        #expect(open.visible == [.budget, .lastSevenDays, .byModel])
+        #expect(open.visible == [.budget, .thisWeek, .byModel])
         #expect(!open.isShown(.credits))
         open.setShown(.credits, true)
-        #expect(open.visible == [.budget, .lastSevenDays, .credits, .byModel])
+        #expect(open.visible == [.budget, .thisWeek, .credits, .byModel])
     }
 
-    @Test func lastSevenDaysJoinsSavedLayoutsBesideTheBudget() {
+    @Test func thisWeekJoinsSavedLayoutsBesideTheBudget() {
         // Saved before the card existed: it goes straight after the weekly budget, shown.
         let json = #"{"left":"ringPair","right":"countdown","open":{"order":["byModel","budget","credits"],"hidden":["credits"]}}"#
         let layout = NotchLayout.decode(Data(json.utf8))
-        #expect(layout.open.order == [.byModel, .budget, .lastSevenDays, .credits])
-        #expect(layout.open.isShown(.lastSevenDays))
-        #expect(OpenLayout().order == [.budget, .lastSevenDays, .byModel, .credits])
+        #expect(layout.open.order == [.byModel, .budget, .thisWeek, .credits])
+        #expect(layout.open.isShown(.thisWeek))
+        #expect(OpenLayout().order == [.budget, .thisWeek, .byModel, .credits])
     }
 
     @Test func itemsSayWhichFigureTheyCarry() {

@@ -1,5 +1,4 @@
 import AppKit
-import Charts
 import SwiftUI
 import UniformTypeIdentifiers
 import UsageCore
@@ -10,13 +9,13 @@ final class HistoryWindowController {
     private let window: NSWindow
     private let model: HistoryWindowModel
 
-    init(history: UsageHistory) {
-        model = HistoryWindowModel(history: history)
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 820),
+    init(history: UsageHistory, store: UsageStore) {
+        model = HistoryWindowModel(history: history, store: store)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 860),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Usage History"
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 560, height: 480)
+        window.minSize = NSSize(width: 860, height: 520)
         window.contentView = NSHostingView(rootView: HistoryView(model: model))
         window.center()
         window.setFrameAutosaveName("UsageHistory")
@@ -34,10 +33,27 @@ final class HistoryWindowController {
 @Observable
 final class HistoryWindowModel {
     let history: UsageHistory
+    let store: UsageStore
+    /// The day in the side panel; today until another is clicked.
     var selectedDay: Date?
+    /// A past week drawn over this one, chosen by clicking its date in the calendar.
+    var overlayWeek: Date?
+    /// What this week is compared against, remembered between launches.
+    var comparison: WeekProgress.Comparison {
+        didSet { AppEnvironment.defaults.set(comparison.rawValue, forKey: Self.comparisonKey) }
+    }
 
-    init(history: UsageHistory) {
+    static let comparisonKey = "historyComparison"
+
+    init(history: UsageHistory, store: UsageStore) {
         self.history = history
+        self.store = store
+        comparison = AppEnvironment.defaults.string(forKey: Self.comparisonKey).flatMap(WeekProgress.Comparison.init(rawValue:)) ?? .lastWeek
+    }
+
+    /// Everything the weeks part of the window draws, worked out once per change.
+    func snapshot(now: Date) -> WeeksSnapshot {
+        WeeksSnapshot(history: history, state: store.state, comparison: comparison, now: now)
     }
 
     func windowOpened() { history.logs.windowOpened() }
@@ -51,9 +67,7 @@ final class HistoryWindowModel {
         return TokenBreakdown.mostly(rows, in: DateInterval(start: day, end: end))
     }
 
-    var days: [DailyUsage.Day] { DailyUsage.days(history.lines, count: 30, now: Date()) }
     var heatMap: UsageHeatMap { UsageHeatMap.make(history.lines) }
-    var pastWeeks: [WeekSummary] { history.weeks.reversed() }
 
     // MARK: Export
 
@@ -62,16 +76,18 @@ final class HistoryWindowModel {
         let panel = NSSavePanel()
         panel.title = "Export usage history"
         panel.prompt = "Export"
-        panel.message = "Saves a folder with your readings, 5-hour windows and weeks as CSV files."
+        panel.message = "Saves a folder with your readings, days, 5-hour windows and weeks as CSV files."
         panel.nameFieldStringValue = "Usage history \(Date().formatted(.iso8601.year().month().day()))"
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         let lines = history.lines, windows = history.windows, weeks = history.weeks, tokens = tokenRows
+        let days = DaySummaries.merge(existing: history.days, rebuilt: DaySummaries.build(from: lines))
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try HistoryCSV.readings(lines).write(to: folder.appending(path: "readings.csv"), atomically: true, encoding: .utf8)
             try HistoryCSV.windows(windows).write(to: folder.appending(path: "five-hour-windows.csv"), atomically: true, encoding: .utf8)
             try HistoryCSV.weeks(weeks).write(to: folder.appending(path: "weeks.csv"), atomically: true, encoding: .utf8)
+            try HistoryCSV.days(days).write(to: folder.appending(path: "days.csv"), atomically: true, encoding: .utf8)
             if let tokens {
                 try HistoryCSV.hourlyTokens(tokens).write(to: folder.appending(path: "claude-code-tokens.csv"), atomically: true, encoding: .utf8)
             }
@@ -102,13 +118,13 @@ struct HistoryContent: View {
 
     var body: some View {
             VStack(alignment: .leading, spacing: 28) {
-                header
-                if model.history.lines.isEmpty {
+                if model.history.lines.isEmpty && model.history.days.isEmpty {
+                    header
                     Text("Nothing recorded yet. Each time the app checks your usage it adds a reading here.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ThirtyDaysSection(model: model)
-                    PastWeeksSection(weeks: model.pastWeeks, tokens: model.tokenRows)
+                    WeeksSection(model: model)
+                    Divider()
                     HeatMapSection(map: model.heatMap)
                 }
                 LogLayerSection(model: model)
@@ -120,8 +136,8 @@ struct HistoryContent: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Usage history").font(.title2.weight(.semibold))
-            Text("Kept only on this Mac. Raw readings for 90 days, weekly and 5-hour summaries for good.")
+            Text("Weeks").font(.title2.weight(.semibold))
+            Text("How each limit week went, from reset to reset. Kept only on this Mac.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -150,173 +166,6 @@ struct SectionTitle: View {
             Text(title).font(.headline)
             if let detail { Text(detail).font(.callout).foregroundStyle(.secondary) }
         }
-    }
-}
-
-// MARK: - Last 30 days
-
-struct ThirtyDaysSection: View {
-    @Bindable var model: HistoryWindowModel
-
-    var body: some View {
-        let days = model.days
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Last 30 days", detail: "Share of the weekly limit used each day. The dashed line is an even seventh of the week.")
-            Chart {
-                ForEach(days) { day in
-                    if !day.hasReadings && day.total == 0 {
-                        RectangleMark(x: .value("Day", day.start, unit: .day), yStart: .value("Used", 0), yEnd: .value("Used", 4))
-                            .foregroundStyle(.gray.opacity(0.18))
-                    }
-                    BarMark(x: .value("Day", day.start, unit: .day), y: .value("Used", day.points))
-                        .foregroundStyle(by: .value("Kind", "Used"))
-                    BarMark(x: .value("Day", day.start, unit: .day), y: .value("Used", day.gapPoints))
-                        .foregroundStyle(by: .value("Kind", "Seen after a gap"))
-                }
-                RuleMark(y: .value("Daily budget", DailyUsage.dailyBudget))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .foregroundStyle(.secondary)
-                if let selected = model.selectedDay {
-                    RuleMark(x: .value("Day", selected, unit: .day))
-                        .foregroundStyle(.secondary.opacity(0.4))
-                }
-            }
-            .chartForegroundStyleScale(["Used": Color.accentColor, "Seen after a gap": Color.accentColor.opacity(0.35)])
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisGridLine()
-                    AxisValueLabel { if let v = value.as(Double.self) { Text("\(Int(v))%") } }
-                }
-            }
-            .chartXAxis {
-                AxisMarks(values: .stride(by: .day, count: 7)) { _ in
-                    AxisGridLine()
-                    AxisValueLabel(format: .dateTime.day().month(.abbreviated))
-                }
-            }
-            .chartXSelection(value: $model.selectedDay)
-            .frame(height: 200)
-
-            let day = selectedOrBiggest(days)
-            DayDetail(day: day, isSelected: model.selectedDay != nil, mostly: day.flatMap { model.mostly(on: $0.start) })
-            if model.tokenRows != nil {
-                SpikeLines(days: days, model: model)
-            }
-            Text("A grey block is a day with no readings. The faded top of a bar is use that only showed up after a gap in readings, such as the Mac being asleep.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func selectedOrBiggest(_ days: [DailyUsage.Day]) -> DailyUsage.Day? {
-        if let selected = model.selectedDay {
-            return days.first { Calendar.current.isDate($0.start, inSameDayAs: selected) }
-        }
-        return days.max { $0.total < $1.total }.flatMap { $0.total > 0 ? $0 : nil }
-    }
-}
-
-struct DayDetail: View {
-    let day: DailyUsage.Day?
-    let isSelected: Bool
-    var mostly: String?
-
-    var body: some View {
-        if let day {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(headline(day)).font(.callout.weight(.medium))
-                if let mostly {
-                    Text("In Claude Code, \(mostly).").font(.callout).foregroundStyle(.secondary)
-                }
-                if day.gapPoints > 0 {
-                    Text("\(LastSevenDays.percent(day.gapPoints)) of it showed up after a gap in readings, so some may be from earlier.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private func headline(_ day: DailyUsage.Day) -> String {
-        let date = day.start.formatted(.dateTime.weekday(.wide).day().month(.wide))
-        guard day.hasReadings || day.total > 0 else { return "\(date): no readings." }
-        let prefix = isSelected ? "" : "Biggest day: "
-        let verdict = DailyUsage.isOverBudget(day) ? "over the daily budget" : "within the daily budget"
-        return "\(prefix)\(date) used \(LastSevenDays.percent(day.total)) of the week, \(verdict)."
-    }
-}
-
-/// Under the chart, with the log layer on: what the biggest days over budget were mostly spent on.
-struct SpikeLines: View {
-    let days: [DailyUsage.Day]
-    let model: HistoryWindowModel
-
-    var body: some View {
-        let spikes = days.filter(DailyUsage.isOverBudget).sorted { $0.total > $1.total }.prefix(3)
-        if !spikes.isEmpty {
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(spikes)) { day in
-                    Text("\(day.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))), \(LastSevenDays.percent(day.total)): \(model.mostly(on: day.start) ?? "no Claude Code use logged")")
-                        .font(.callout)
-                }
-                Text("Claude Code only: the logs can't see the Claude app, web or phone.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-// MARK: - Past weeks
-
-struct PastWeeksSection: View {
-    let weeks: [WeekSummary]
-    var tokens: [HourlyTokens]?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Past weeks")
-            if weeks.isEmpty {
-                Text("Each week shows here once it resets.").foregroundStyle(.secondary)
-            } else {
-                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
-                    GridRow {
-                        Text("Week")
-                        Text("Final")
-                        Text("Limit reached")
-                        Text("5-hour limits hit")
-                        Text("Credits spent")
-                        if tokens != nil { Text("In Claude Code") }
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    Divider()
-                    ForEach(weeks, id: \.end) { week in
-                        GridRow {
-                            Text(range(week))
-                            Text(UsageFormat.percent(week.finalPercent)).monospacedDigit()
-                            Text(week.limitReachedAt.map { $0.formatted(.dateTime.weekday(.wide).hour().minute()) } ?? "No")
-                            Text("\(week.windowsAtLimit)").monospacedDigit()
-                            Text(credits(week)).monospacedDigit()
-                            if let tokens {
-                                Text(TokenBreakdown.mostly(tokens, in: DateInterval(start: week.start, end: week.end)) ?? "No use logged")
-                            }
-                        }
-                        .font(.callout)
-                    }
-                }
-            }
-        }
-    }
-
-    private func range(_ week: WeekSummary) -> String {
-        let style = Date.FormatStyle.dateTime.day().month(.abbreviated)
-        return "\(week.start.formatted(style)) to \(week.end.formatted(style))"
-    }
-
-    private func credits(_ week: WeekSummary) -> String {
-        guard let spent = week.creditsSpent else { return "Not known" }
-        return spent > 0 ? UsageFormat.money(spent, currency: week.currency ?? "USD") : "None"
     }
 }
 

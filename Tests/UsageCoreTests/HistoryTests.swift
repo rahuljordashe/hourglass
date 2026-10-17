@@ -265,34 +265,20 @@ struct DailyUseTests {
             line(at(day: 1, hour: 12, minute: 10), week: 3, weekReset: at(day: 8, hour: 12), prev: at(day: 1, hour: 11, minute: 50)),
             line(at(day: 1, hour: 12, minute: 25), week: 5, weekReset: at(day: 8, hour: 12))
         ]
-        let days = DailyUsage.days(lines, count: 2, now: at(day: 1, hour: 13), calendar: utcCalendar)
-        #expect(days.map(\.points) == [5, 5 + 3 + 2])
-        #expect(days.map(\.gapPoints) == [0, 0])
-        #expect(days.last?.isToday == true)
+        let days = DaySummaries.build(from: lines, calendar: utcCalendar)
+        #expect(days.map(\.share) == [5, 5 + 3 + 2])
+        #expect(days.map(\.gapShare) == [0, 0])
     }
 
-    @Test func daysWithoutReadingsAreGapsNotZero() {
+    @Test func daysWithoutReadingsHaveNoSummary() {
         let lines = [
             line(at(day: 0, hour: 10), week: 10, weekReset: at(day: 7)),
             line(at(day: 3, hour: 9), week: 40, weekReset: at(day: 7), prev: at(day: 0, hour: 10))
         ]
-        let days = DailyUsage.days(lines, count: 4, now: at(day: 3, hour: 12), calendar: utcCalendar)
-        #expect(days.map(\.hasReadings) == [true, false, false, true])
-        #expect(days[3].points == 0)
-        #expect(days[3].gapPoints == 30)
-    }
-
-    @Test func sevenDaySummaryLine() {
-        let days = (0..<7).map { i in
-            DailyUsage.Day(start: at(day: Double(i)), points: i == 0 ? 22 : 3, gapPoints: 0, hasReadings: true, isToday: i == 6)
-        }
-        #expect(LastSevenDays.summary(days, now: at(day: 6, hour: 12), calendar: utcCalendar, locale: Locale(identifier: "en_GB"))
-                == "Monday used 22% of the week, over the daily budget.")
-        let quiet = days.map { var d = $0; d.points = $0.isToday ? 9 : 1; return d }
-        #expect(LastSevenDays.summary(quiet, now: at(day: 6, hour: 12), calendar: utcCalendar)
-                == "Today has used 9% of the week so far, within the daily budget.")
-        let empty = days.map { var d = $0; d.hasReadings = false; d.points = 0; return d }
-        #expect(LastSevenDays.summary(empty, now: at(day: 6), calendar: utcCalendar) == "Builds up as the app takes readings.")
+        let days = DaySummaries.build(from: lines, calendar: utcCalendar)
+        #expect(days.map(\.date) == ["2026-10-05", "2026-10-08"])
+        #expect(days[1].share == 30)
+        #expect(days[1].gapShare == 30)
     }
 
     @Test func heatMapWaitsForFourteenDays() {

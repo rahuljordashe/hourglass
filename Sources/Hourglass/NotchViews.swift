@@ -1019,9 +1019,9 @@ struct OpenSectionView: View {
             if let budget = WeeklyBudget.make(weekly: state.sevenDay, now: now) {
                 BudgetCard(budget: budget, now: now)
             }
-        case .lastSevenDays:
-            if !context.history.lines.isEmpty {
-                LastSevenDaysCard(days: DailyUsage.days(context.history.lines, count: 7, now: now), now: now)
+        case .thisWeek:
+            if let thisWeek = WeekChartData.thisWeek(history: context.history, state: state, now: now) {
+                ThisWeekCard(data: thisWeek.data)
             }
         case .byModel:
             if !state.scoped.isEmpty {
@@ -1038,7 +1038,7 @@ struct OpenSectionView: View {
         let state = context.store.state
         return switch section {
         case .budget: WeeklyBudget.make(weekly: state.sevenDay, now: now) != nil
-        case .lastSevenDays: !context.history.lines.isEmpty
+        case .thisWeek: state.sevenDay.map { !$0.isReset } ?? false
         case .byModel: !state.scoped.isEmpty
         case .credits: state.credits != nil || !state.promos.isEmpty
         }

@@ -117,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showHistory() {
         notchController.collapse()
-        if historyWindow == nil { historyWindow = HistoryWindowController(history: history) }
+        if historyWindow == nil { historyWindow = HistoryWindowController(history: history, store: store) }
         historyWindow?.show()
     }
 

@@ -52,7 +52,7 @@ enum PreviewRenderer {
 
     /// The History window's content, in both appearances.
     static func renderHistory(context: NotchContext, into folder: URL) {
-        let model = HistoryWindowModel(history: context.history)
+        let model = HistoryWindowModel(history: context.history, store: context.store)
         for (name, scheme) in [("history", ColorScheme.light), ("history-dark", ColorScheme.dark)] {
             let view = HistoryContent(model: model)
                 .frame(width: 700)
@@ -128,11 +128,13 @@ enum PreviewRenderer {
         func scrollViews(in view: NSView) -> [NSScrollView] {
             (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
         }
-        func historyWindow(_ appearance: NSAppearance.Name, height: CGFloat) -> NSWindow {
-            let window = NSWindow(contentRect: NSRect(x: -9000, y: 0, width: 700, height: height),
+        func historyWindow(_ appearance: NSAppearance.Name, height: CGFloat, configure: (HistoryWindowModel) -> Void = { _ in }) -> NSWindow {
+            let window = NSWindow(contentRect: NSRect(x: -9000, y: 0, width: 980, height: height),
                                   styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: appearance)
-            window.contentView = NSHostingView(rootView: HistoryView(model: HistoryWindowModel(history: context.history)))
+            let model = HistoryWindowModel(history: context.history, store: context.store)
+            configure(model)
+            window.contentView = NSHostingView(rootView: HistoryView(model: model))
             window.orderFrontRegardless()
             return window
         }
@@ -154,8 +156,20 @@ enum PreviewRenderer {
             steps.append((0.1, { windows.append(historyWindow(appearance, height: 820)) }))
             steps.append((1.5, { save(windows.last?.contentView, name) }))
         }
-        steps.append((0.1, { windows.append(historyWindow(.darkAqua, height: 2300)) }))
+        steps.append((0.1, { windows.append(historyWindow(.darkAqua, height: 1700)) }))
         steps.append((1.5, { save(windows.last?.contentView, "live-history-dark-full") }))
+        steps.append((0.1, { windows.append(historyWindow(.aqua, height: 820) { $0.comparison = .fourWeeks }) }))
+        steps.append((1.5, { save(windows.last?.contentView, "live-history-4-weeks") }))
+        steps.append((0.1, { windows.append(historyWindow(.darkAqua, height: 820) { $0.comparison = .threeMonths }) }))
+        steps.append((1.5, { save(windows.last?.contentView, "live-history-3-months") }))
+        steps.append((0.1, { windows.append(historyWindow(.aqua, height: 820) { model in
+            model.overlayWeek = context.history.weeks.dropLast().last?.end
+            model.selectedDay = Calendar.current.date(byAdding: .day, value: -3, to: Calendar.current.startOfDay(for: Date()))
+        }) }))
+        steps.append((1.5, { save(windows.last?.contentView, "live-history-overlay") }))
+        // Leave the remembered comparison as it was found.
+        let remembered = AppEnvironment.defaults.string(forKey: HistoryWindowModel.comparisonKey)
+        steps.append((0.1, { AppEnvironment.defaults.set(remembered, forKey: HistoryWindowModel.comparisonKey) }))
 
         func run(_ index: Int) {
             guard index < steps.count else { exit(0) }

@@ -48,6 +48,19 @@ public enum HistoryCSV {
         return csv(out)
     }
 
+    public static func days(_ days: [DaySummary]) -> String {
+        var rows = [["date", "share_of_week", "seen_after_gap", "had_gap", "week_total_at_end", "week_resets_at",
+                     "weekly_limit_reached_at", "five_hour_limit_hit", "five_hour_peaks", "readings"]]
+        for d in days {
+            rows.append([
+                d.date, number(d.share), number(d.gapShare), d.hadGap ? "yes" : "no", number(d.weekTotalAtEnd), date(d.weekEnd),
+                date(d.limitReachedAt), d.fiveHourLimitHit ? "yes" : "no",
+                d.fiveHourWindows.map { "\(date($0.start)) \(number($0.peakPercent))%" }.joined(separator: "; "), "\(d.readings)"
+            ])
+        }
+        return csv(rows)
+    }
+
     // MARK: Helpers
 
     static func csv(_ rows: [[String]]) -> String {

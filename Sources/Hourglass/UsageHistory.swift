@@ -10,6 +10,12 @@ final class UsageHistory {
     private(set) var lines: [HistoryLine] = []
     private(set) var windows: [WindowSummary] = []
     private(set) var weeks: [WeekSummary] = []
+    private(set) var days: [DaySummary] = []
+
+    /// When recording began: the first raw reading, or the first daily summary once that's pruned.
+    var historyStart: Date? {
+        [lines.first?.time, days.first?.start].compactMap { $0 }.min()
+    }
 
     /// The optional Claude Code log layer, off by default.
     let logs: ClaudeCodeLogLayer
@@ -37,9 +43,10 @@ final class UsageHistory {
     func loadNow() {
         logs.loadNow()
         lines = files.loadReadings()
-        let built = HistorySummaries.build(from: lines, now: Date())
-        windows = HistorySummaries.merge(existing: files.loadWindows(), rebuilt: built.windows)
-        weeks = HistorySummaries.merge(existing: files.loadWeeks(), rebuilt: built.weeks)
+        let set = files.summaries(from: lines, now: Date())
+        windows = set.windows
+        weeks = set.weeks
+        days = set.days
     }
 
     /// Records a fresh reading (the caller skips last-known ones). Identical readings are skipped
@@ -56,6 +63,7 @@ final class UsageHistory {
         if let summaries = snapshot.summaries {
             windows = summaries.windows
             weeks = summaries.weeks
+            days = summaries.days
         }
     }
 }
@@ -65,7 +73,7 @@ actor HistoryArchive {
     struct Snapshot: Sendable {
         var lines: [HistoryLine]
         /// Only when they were rebuilt.
-        var summaries: (windows: [WindowSummary], weeks: [WeekSummary])?
+        var summaries: HistorySummarySet?
     }
 
     private let files: HistoryFiles
@@ -99,7 +107,7 @@ actor HistoryArchive {
         lines.append(line)
 
         // A reset closes a window: summarise it now (rebuilding is idempotent).
-        var summaries: (windows: [WindowSummary], weeks: [WeekSummary])?
+        var summaries: HistorySummarySet?
         if let previous, Self.isReset(line, after: previous) { summaries = rebuild(now: now) }
         if lastPrune.map({ now.timeIntervalSince($0) >= 86400 }) ?? true, prune(now: now) {
             lines = files.loadReadings()
@@ -114,7 +122,7 @@ actor HistoryArchive {
             || (previous.weekly?.resetsAt != nil && line.weekly?.resetsAt == nil)
     }
 
-    private func rebuild(now: Date) -> (windows: [WindowSummary], weeks: [WeekSummary])? {
+    private func rebuild(now: Date) -> HistorySummarySet? {
         do { return try files.rebuildSummaries(from: lines, now: now) } catch {
             Log.data.error("Couldn't write the history summaries: \(error.localizedDescription, privacy: .public)")
             return nil

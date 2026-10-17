@@ -247,12 +247,12 @@ public struct HoverOptions: Codable, Equatable, Sendable {
 /// rows are always first and can't be moved.
 public struct OpenLayout: Codable, Equatable, Sendable {
     public enum Section: String, Codable, Sendable, CaseIterable {
-        case budget, lastSevenDays, byModel, credits
+        case budget, thisWeek, byModel, credits
 
         public var title: String {
             switch self {
             case .budget: "Weekly budget"
-            case .lastSevenDays: "Last 7 days"
+            case .thisWeek: "This week"
             case .byModel: "Weekly by model"
             case .credits: "Usage credits"
             }
@@ -288,7 +288,7 @@ public struct OpenLayout: Codable, Equatable, Sendable {
     }
 
     /// Sections added in a later version, and the one each goes after in a layout saved before it.
-    static let placedAfter: [Section: Section] = [.lastSevenDays: .budget]
+    static let placedAfter: [Section: Section] = [.thisWeek: .budget]
 
     /// Every section exactly once: unknown ones dropped, missing ones added at the end (or after
     /// the section they belong next to).

@@ -18,7 +18,8 @@ for name in os.listdir(history):
 
 random.seed(7)
 now = datetime.now().astimezone().replace(second=0, microsecond=0)
-start = (now - timedelta(days=24)).replace(hour=0, minute=0)
+days = int(os.environ.get("FAKE_DAYS", "24"))
+start = (now - timedelta(days=days)).replace(hour=0, minute=0)
 # The week resets on Thursdays at 18:00 local time.
 reset = start.replace(hour=18)
 while reset.weekday() != 3:

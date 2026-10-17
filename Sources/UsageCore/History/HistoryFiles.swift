@@ -18,6 +18,7 @@ public struct HistoryFiles: Sendable {
 
     public var windowsFile: URL { directory.appending(path: "windows.jsonl") }
     public var weeksFile: URL { directory.appending(path: "weeks.jsonl") }
+    public var daysFile: URL { directory.appending(path: "days.jsonl") }
     public var hourlyTokensFile: URL { directory.appending(path: "claude-code-hourly.jsonl") }
     public var logScanStateFile: URL { directory.appending(path: "claude-code-scan.json") }
 
@@ -107,17 +108,26 @@ public struct HistoryFiles: Sendable {
 
     public func loadWindows() -> [WindowSummary] { loadLines(WindowSummary.self, from: windowsFile) }
     public func loadWeeks() -> [WeekSummary] { loadLines(WeekSummary.self, from: weeksFile) }
+    public func loadDays() -> [DaySummary] { loadLines(DaySummary.self, from: daysFile) }
 
-    /// Rebuilds both summary files from the raw readings and what's already summarised, so a
-    /// missed reset or a crash heals on the next run. Running it twice gives the same files.
+    /// Rebuilds the summary files from the raw readings and what's already summarised, so a missed
+    /// reset or a crash heals on the next run. Running it twice gives the same files.
     @discardableResult
-    public func rebuildSummaries(from readings: [HistoryLine], now: Date) throws -> (windows: [WindowSummary], weeks: [WeekSummary]) {
+    public func rebuildSummaries(from readings: [HistoryLine], now: Date, calendar: Calendar = .current) throws -> HistorySummarySet {
+        let set = summaries(from: readings, now: now, calendar: calendar)
+        try writeLines(set.windows, to: windowsFile)
+        try writeLines(set.weeks, to: weeksFile)
+        try writeLines(set.days, to: daysFile)
+        return set
+    }
+
+    /// What `rebuildSummaries` would write, without writing it.
+    public func summaries(from readings: [HistoryLine], now: Date, calendar: Calendar = .current) -> HistorySummarySet {
         let rebuilt = HistorySummaries.build(from: readings, now: now)
-        let windows = HistorySummaries.merge(existing: loadWindows(), rebuilt: rebuilt.windows)
-        let weeks = HistorySummaries.merge(existing: loadWeeks(), rebuilt: rebuilt.weeks)
-        try writeLines(windows, to: windowsFile)
-        try writeLines(weeks, to: weeksFile)
-        return (windows, weeks)
+        return HistorySummarySet(
+            windows: HistorySummaries.merge(existing: loadWindows(), rebuilt: rebuilt.windows),
+            weeks: HistorySummaries.merge(existing: loadWeeks(), rebuilt: rebuilt.weeks),
+            days: DaySummaries.merge(existing: loadDays(), rebuilt: DaySummaries.build(from: readings, calendar: calendar)))
     }
 
     // MARK: Claude Code log layer
@@ -150,5 +160,17 @@ public struct HistoryFiles: Sendable {
         let data = try HistoryCoding.encodeLines(values)
         if (try? Data(contentsOf: url)) == data { return }
         try data.write(to: url, options: .atomic)
+    }
+}
+
+public struct HistorySummarySet: Equatable, Sendable {
+    public var windows: [WindowSummary]
+    public var weeks: [WeekSummary]
+    public var days: [DaySummary]
+
+    public init(windows: [WindowSummary] = [], weeks: [WeekSummary] = [], days: [DaySummary] = []) {
+        self.windows = windows
+        self.weeks = weeks
+        self.days = days
     }
 }
