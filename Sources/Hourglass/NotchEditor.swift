@@ -384,6 +384,7 @@ struct HoverEditor: View {
 /// can be shown or hidden and moved up or down.
 struct OpenEditor: View {
     let context: NotchContext
+    @Environment(\.isStaticRender) private var isStatic
 
     var body: some View {
         let ui = context.ui
@@ -394,27 +395,48 @@ struct OpenEditor: View {
                 fixedRow(.fiveHour)
                 fixedRow(.sevenDay)
             }
-            ForEach(open.order, id: \.self) { section in
-                let shown = open.isShown(section)
-                VStack(alignment: .leading, spacing: 6) {
-                    controls(section, shown: shown)
-                    Group {
-                        if OpenSectionView.hasContent(section, state: context.store.state, now: now) {
-                            OpenSectionView(section: section, context: context, now: now)
-                        } else {
-                            Text("Shows when there's a reading for it")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.white.opacity(0.35))
-                        }
+            // Four sections and their previews outgrow the panel: they scroll under the fixed rows.
+            // (Still images can't draw a scroll view, so they get the top of the list.)
+            Group {
+                if isStatic {
+                    VStack(alignment: .leading, spacing: 10) { sections(open, now: now) }
+                        .frame(height: Self.sectionsHeight, alignment: .top)
+                        .clipped()
+                } else {
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: 10) { sections(open, now: now) }
                     }
-                    .opacity(shown ? 1 : 0.3)
-                    .allowsHitTesting(false)
+                    .scrollIndicators(.automatic)
+                    .frame(height: Self.sectionsHeight)
                 }
-                .padding(10)
-                .background(Theme.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
         .animation(ui.reduceMotion ? Motion.fade : Motion.open, value: open)
+    }
+
+    static let sectionsHeight: CGFloat = 470
+
+    @ViewBuilder
+    private func sections(_ open: OpenLayout, now: Date) -> some View {
+        ForEach(open.order, id: \.self) { section in
+            let shown = open.isShown(section)
+            VStack(alignment: .leading, spacing: 6) {
+                controls(section, shown: shown)
+                Group {
+                    if OpenSectionView.hasContent(section, context: context, now: now) {
+                        OpenSectionView(section: section, context: context, now: now)
+                    } else {
+                        Text("Shows when there's a reading for it")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.white.opacity(0.35))
+                    }
+                }
+                .opacity(shown ? 1 : 0.3)
+                .allowsHitTesting(false)
+            }
+            .padding(10)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
     }
 
     /// A compact copy of a limit row, dimmed: always shown, can't be moved.

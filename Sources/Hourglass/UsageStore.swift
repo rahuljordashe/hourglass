@@ -17,6 +17,8 @@ final class UsageStore {
     var state: UsageState { UsageEvaluator.evaluate(plan: usage, now: now) }
 
     @ObservationIgnored var onChange: ((UsageState) -> Void)?
+    /// Each fresh (not last-known) reading, after merging, for the usage history.
+    @ObservationIgnored var onFreshReading: ((PlanUsage) -> Void)?
     @ObservationIgnored private let paths: NotchPaths
     @ObservationIgnored private var tickTimer: Timer?
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
@@ -40,6 +42,7 @@ final class UsageStore {
     func apply(_ incoming: PlanUsage) {
         let merged = PlanUsageMerger.merge(incoming, into: usage)
         now = Date()
+        if !incoming.isSeeded { onFreshReading?(merged) }
         guard merged != usage else { return }
         usage = merged
         do { try JSONFile.write(merged, to: paths.planUsageFile) } catch {

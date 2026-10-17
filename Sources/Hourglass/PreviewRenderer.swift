@@ -46,7 +46,24 @@ enum PreviewRenderer {
                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
             try? png.write(to: folder.appending(path: "\(name).png"))
         }
+        renderHistory(context: context, into: folder)
         print("Rendered previews to \(folder.path)")
+    }
+
+    /// The History window's content, in both appearances.
+    static func renderHistory(context: NotchContext, into folder: URL) {
+        let model = HistoryWindowModel(history: context.history)
+        for (name, scheme) in [("history", ColorScheme.light), ("history-dark", ColorScheme.dark)] {
+            let view = HistoryContent(model: model)
+                .frame(width: 700)
+                .background(scheme == .dark ? Color(white: 0.16) : Color(white: 0.97))
+                .environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
+            try? png.write(to: folder.appending(path: "\(name).png"))
+        }
     }
 
     /// `--snapshot-live <folder>`: drives a real, off-screen panel through rest, peek, open and

@@ -107,6 +107,7 @@ struct NotchContext {
     let connection: ConnectionManager
     let loginItem: LoginItem
     let refresher: RefreshController
+    let history: UsageHistory
     let actions: NotchActions
 }
 
@@ -117,6 +118,7 @@ struct NotchActions {
     var collapse: () -> Void
     var toggleHideForAnHour: () -> Void
     var customise: () -> Void = {}
+    var openHistory: () -> Void = {}
     var quit: () -> Void
 }
 
@@ -1017,6 +1019,10 @@ struct OpenSectionView: View {
             if let budget = WeeklyBudget.make(weekly: state.sevenDay, now: now) {
                 BudgetCard(budget: budget, now: now)
             }
+        case .lastSevenDays:
+            if !context.history.lines.isEmpty {
+                LastSevenDaysCard(days: DailyUsage.days(context.history.lines, count: 7, now: now), now: now)
+            }
         case .byModel:
             if !state.scoped.isEmpty {
                 ModelSection(rows: state.scoped, stale: state.freshness == .stale, ui: context.ui)
@@ -1028,9 +1034,11 @@ struct OpenSectionView: View {
         }
     }
 
-    static func hasContent(_ section: OpenLayout.Section, state: UsageState, now: Date) -> Bool {
-        switch section {
+    static func hasContent(_ section: OpenLayout.Section, context: NotchContext, now: Date) -> Bool {
+        let state = context.store.state
+        return switch section {
         case .budget: WeeklyBudget.make(weekly: state.sevenDay, now: now) != nil
+        case .lastSevenDays: !context.history.lines.isEmpty
         case .byModel: !state.scoped.isEmpty
         case .credits: state.credits != nil || !state.promos.isEmpty
         }
@@ -1175,6 +1183,7 @@ struct SettingsMenu: View {
                 .disabled(context.refresher.isReading)
             Text("\(context.refresher.readsInLastHour(now: context.store.now)) of \(context.refresher.hourlyCap) reads used this hour")
             Divider()
+            Button("History…") { context.actions.openHistory() }
             if canCustomise {
                 Button("Customise notch…") { context.actions.customise() }
             }

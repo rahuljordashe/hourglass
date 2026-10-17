@@ -15,6 +15,10 @@ public enum HardenedLaunch {
         case slashUsage
     }
 
+    /// Each read's empty working folder is named this plus a UUID. The usage history's log layer
+    /// uses it to leave out any session these reads might leave behind.
+    public static let workFolderPrefix = "hourglass-read-"
+
     public static let settings = #"{"disableAllHooks":true,"remoteControlAtStartup":false,"autoUploadSessions":false}"#
 
     public static let hardeningFlags = [
@@ -182,7 +186,7 @@ public final class ClaudeCodeReader: @unchecked Sendable {
 
     private func run(_ mode: HardenedLaunch.Mode, now: @escaping @Sendable () -> Date) -> LaunchResult {
         let fm = FileManager.default
-        let workDir = config.tempDirectory.appending(path: "hourglass-read-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let workDir = config.tempDirectory.appending(path: "\(HardenedLaunch.workFolderPrefix)\(UUID().uuidString)", directoryHint: .isDirectory)
         do { try fm.createDirectory(at: workDir, withIntermediateDirectories: true) } catch {
             return .failed(.launchFailed("Couldn't create a working folder"))
         }
