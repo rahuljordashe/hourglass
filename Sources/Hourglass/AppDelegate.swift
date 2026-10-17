@@ -35,6 +35,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PreviewRenderer.snapshotLive(context: context, into: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
             return
         }
+        if let index = CommandLine.arguments.firstIndex(of: "--snapshot-history"), index + 1 < CommandLine.arguments.count {
+            store.start()
+            history.loadNow()
+            let actions = NotchActions(openUsagePage: {}, expand: {}, collapse: {}, toggleHideForAnHour: {}, quit: {})
+            let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, history: history, actions: actions)
+            PreviewRenderer.snapshotHistory(context: context, into: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+            return
+        }
         if terminateIfAlreadyRunning() { return }
         Log.app.info("Launching Hourglass")
 

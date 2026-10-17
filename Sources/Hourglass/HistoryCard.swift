@@ -14,7 +14,7 @@ struct LastSevenDaysCard: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Last 7 days").font(.system(size: 12, weight: .medium))
                 Spacer(minLength: 6)
-                Text("budget about \(Int(DailyUsage.dailyBudget.rounded()))% a day")
+                Text("dashed line: an even \(Int(DailyUsage.dailyBudget.rounded()))% a day")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.white.opacity(0.48))
             }

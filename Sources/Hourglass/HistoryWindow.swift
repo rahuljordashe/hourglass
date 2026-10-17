@@ -92,6 +92,7 @@ struct HistoryView: View {
 
     var body: some View {
         ScrollView { HistoryContent(model: model) }
+            .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
@@ -201,7 +202,7 @@ struct ThirtyDaysSection: View {
             if model.tokenRows != nil {
                 SpikeLines(days: days, model: model)
             }
-            Text("A grey block is a day with no readings. A paler bar is use that only showed up after a gap in readings, such as the Mac being asleep.")
+            Text("A grey block is a day with no readings. The faded top of a bar is use that only showed up after a gap in readings, such as the Mac being asleep.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

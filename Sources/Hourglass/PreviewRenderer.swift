@@ -105,4 +105,65 @@ enum PreviewRenderer {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { run(0) }
     }
+
+    /// `--snapshot-history <folder>`: real windows, off-screen, with whatever history the home holds
+    /// (use `scripts/fake-history.py` and a sandbox home): the open panel, the editor's Open tab
+    /// scrolled to the top and the bottom, and the History window in light and dark.
+    static func snapshotHistory(context: NotchContext, into folder: URL) {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let ui = context.ui
+        let geometry = NotchGeometry(screenFrame: CGRect(x: -6000, y: 0, width: 1728, height: 1117),
+                                     notchWidth: 185, notchHeight: 32, notchMidX: -6000 + 864)
+        ui.geometry = geometry
+        let panel = NotchPanel(rootView: NotchRootView(context: context))
+        panel.place(geometry.openWindowFrame, geometry: geometry)
+        panel.orderFrontRegardless()
+
+        func save(_ view: NSView?, _ name: String) {
+            guard let view, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "\(name).png"))
+            print("Saved \(name).png")
+        }
+        func scrollViews(in view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+        }
+        func historyWindow(_ appearance: NSAppearance.Name, height: CGFloat) -> NSWindow {
+            let window = NSWindow(contentRect: NSRect(x: -9000, y: 0, width: 700, height: height),
+                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: appearance)
+            window.contentView = NSHostingView(rootView: HistoryView(model: HistoryWindowModel(history: context.history)))
+            window.orderFrontRegardless()
+            return window
+        }
+
+        var steps: [(TimeInterval, () -> Void)] = [
+            (0.8, { ui.mode = .expanded }),
+            (1.2, { save(panel.contentView, "live-open") }),
+            (0.1, { ui.editorTab = .open; ui.mode = .editor }),
+            (1.2, { save(panel.contentView, "live-editor-open-top") }),
+            (0.1, {
+                if let scroll = panel.contentView.flatMap(scrollViews)?.first, let doc = scroll.documentView {
+                    doc.scroll(NSPoint(x: 0, y: doc.isFlipped ? doc.bounds.height : 0))
+                }
+            }),
+            (0.6, { save(panel.contentView, "live-editor-open-bottom") })
+        ]
+        var windows: [NSWindow] = []
+        for (name, appearance) in [("live-history", NSAppearance.Name.aqua), ("live-history-dark", .darkAqua)] {
+            steps.append((0.1, { windows.append(historyWindow(appearance, height: 820)) }))
+            steps.append((1.5, { save(windows.last?.contentView, name) }))
+        }
+        steps.append((0.1, { windows.append(historyWindow(.darkAqua, height: 2300)) }))
+        steps.append((1.5, { save(windows.last?.contentView, "live-history-dark-full") }))
+
+        func run(_ index: Int) {
+            guard index < steps.count else { exit(0) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + steps[index].0) {
+                steps[index].1()
+                run(index + 1)
+            }
+        }
+        run(0)
+    }
 }
