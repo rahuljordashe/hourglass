@@ -247,11 +247,12 @@ public struct HoverOptions: Codable, Equatable, Sendable {
 /// rows are always first and can't be moved.
 public struct OpenLayout: Codable, Equatable, Sendable {
     public enum Section: String, Codable, Sendable, CaseIterable {
-        case budget, byModel, credits
+        case budget, thisWeek, byModel, credits
 
         public var title: String {
             switch self {
             case .budget: "Weekly budget"
+            case .thisWeek: "This week"
             case .byModel: "Weekly by model"
             case .credits: "Usage credits"
             }
@@ -286,11 +287,22 @@ public struct OpenLayout: Codable, Equatable, Sendable {
         order.swapAt(index, index + offset)
     }
 
-    /// Every section exactly once: unknown ones dropped, missing ones added at the end.
+    /// Sections added in a later version, and the one each goes after in a layout saved before it.
+    static let placedAfter: [Section: Section] = [.thisWeek: .budget]
+
+    /// Every section exactly once: unknown ones dropped, missing ones added at the end (or after
+    /// the section they belong next to).
     static func normalised(_ order: [Section]) -> [Section] {
         var seen = Set<Section>()
-        let known = order.filter { seen.insert($0).inserted }
-        return known + Section.allCases.filter { !seen.contains($0) }
+        var result = order.filter { seen.insert($0).inserted }
+        for section in Section.allCases where !seen.contains(section) {
+            if let anchor = placedAfter[section], let index = result.firstIndex(of: anchor) {
+                result.insert(section, at: index + 1)
+            } else {
+                result.append(section)
+            }
+        }
+        return result
     }
 
     enum CodingKeys: String, CodingKey { case order, hidden }

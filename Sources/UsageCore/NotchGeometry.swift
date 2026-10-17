@@ -23,7 +23,7 @@ public struct NotchGeometry: Equatable, Sendable {
     /// Room for the concave "flare" at the panel's top corners, outside the content.
     public static let flare: CGFloat = 8
     /// The largest the open panel gets; the window takes this size whenever it isn't at rest.
-    public static let openSize = CGSize(width: 440, height: 600)
+    public static let openSize = CGSize(width: 440, height: 720)
 
     public init(screenFrame: CGRect, notchWidth: CGFloat, notchHeight: CGFloat, notchMidX: CGFloat) {
         self.screenFrame = screenFrame

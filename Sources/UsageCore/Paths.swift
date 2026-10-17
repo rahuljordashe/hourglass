@@ -28,6 +28,12 @@ public struct NotchPaths: Sendable {
     /// The latest plan usage read from Claude Code by the app itself.
     public var planUsageFile: URL { supportDirectory.appending(path: "plan-usage.json") }
 
+    /// The usage history: raw readings, summaries and the optional Claude Code log aggregates.
+    public var historyDirectory: URL { supportDirectory.appending(path: "history", directoryHint: .isDirectory) }
+
+    /// Claude Code's session logs, read only when the history's log layer is turned on.
+    public var claudeProjects: URL { home.appending(path: ".claude/projects", directoryHint: .isDirectory) }
+
     /// The read budget, backoff and quiet period, so they survive a relaunch.
     public var readLedgerFile: URL { supportDirectory.appending(path: "read-ledger.json") }
 

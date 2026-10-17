@@ -8,28 +8,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var connection = ConnectionManager(paths: paths)
     private let loginItem = LoginItem()
     private lazy var refresher = RefreshController(paths: paths, store: store)
+    private lazy var history = UsageHistory(paths: paths)
     private let ui = NotchUIModel()
     private let video = VideoWatcher()
     private var alerts: AlertTracker = AlertTracker()
 
     private var notchController: NotchController!
     private var statusItemController: StatusItemController!
+    private var historyWindow: HistoryWindowController?
     private var observers: [NSObjectProtocol] = []
     private var screenChangeTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let index = CommandLine.arguments.firstIndex(of: "--render-previews"), index + 1 < CommandLine.arguments.count {
             store.start()
+            history.loadNow()
             let actions = NotchActions(openUsagePage: {}, expand: {}, collapse: {}, toggleHideForAnHour: {}, quit: {})
-            let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, actions: actions)
+            let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, history: history, actions: actions)
             PreviewRenderer.run(context: context, into: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
             exit(0)
         }
         if let index = CommandLine.arguments.firstIndex(of: "--snapshot-live"), index + 1 < CommandLine.arguments.count {
             store.start()
             let actions = NotchActions(openUsagePage: {}, expand: {}, collapse: {}, toggleHideForAnHour: {}, quit: {})
-            let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, actions: actions)
+            let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, history: history, actions: actions)
             PreviewRenderer.snapshotLive(context: context, into: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+            return
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--snapshot-history"), index + 1 < CommandLine.arguments.count {
+            store.start()
+            history.loadNow()
+            let actions = NotchActions(openUsagePage: {}, expand: {}, collapse: {}, toggleHideForAnHour: {}, quit: {})
+            let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, history: history, actions: actions)
+            PreviewRenderer.snapshotHistory(context: context, into: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
             return
         }
         if terminateIfAlreadyRunning() { return }
@@ -44,9 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             collapse: { [weak self] in self?.notchController.collapse() },
             toggleHideForAnHour: { [weak self] in self?.notchController.toggleHideForAnHour() },
             customise: { [weak self] in self?.notchController.customise() },
+            openHistory: { [weak self] in self?.showHistory() },
             quit: { NSApp.terminate(nil) }
         )
-        let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, actions: actions)
+        let context = NotchContext(store: store, ui: ui, connection: connection, loginItem: loginItem, refresher: refresher, history: history, actions: actions)
         notchController = NotchController(context: context)
         statusItemController = StatusItemController(context: context)
 
@@ -54,6 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.enableOnFirstRun()
 
         store.onChange = { [weak self] state in self?.stateChanged(state) }
+        store.onFreshReading = { [weak self] usage in self?.history.record(usage) }
+        history.start()
         store.start()
         _ = alerts.process(store.state, now: store.now) // seed silently with what's already known
         refresher.start()
@@ -97,6 +111,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         notchController?.teardown()
+    }
+
+    // MARK: History
+
+    private func showHistory() {
+        notchController.collapse()
+        if historyWindow == nil { historyWindow = HistoryWindowController(history: history, store: store) }
+        historyWindow?.show()
     }
 
     // MARK: State
