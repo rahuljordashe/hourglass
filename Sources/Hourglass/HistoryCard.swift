@@ -58,23 +58,26 @@ struct WeekChartPalette {
     }
 }
 
-/// x: the limit week from reset to reset, a tick per day labelled with its weekday initial (today's
-/// brighter). y: 0 to 100% of the weekly limit, faint lines at 0, 50 and 100. Dashed diagonal: an
-/// even pace. Faded: the comparison. Bold: this week so far, ending in a dot at now.
+/// x: the limit week from reset to reset, split at local midnights, each day labelled with its weekday
+/// initial and today's stretch faintly lit. y: 0 to 100% of the weekly limit, faint lines at 0, 50 and 100.
+/// Dashed diagonal: an even pace, quieter after now. Faded: the comparison.
+/// Bold: this week so far over a faint fill, ending in a dot at now with a dotted hairline down to the axis.
 struct WeekChart: View {
     let data: WeekChartData
     var palette: WeekChartPalette = .notch
     /// A past week drawn over this one (the History window's calendar), labelled with its date.
     var overlay: (curve: [CurvePoint], label: String)?
+    /// The History window's % labels down the left. Without them, 50% and 100% are marked inside on the right.
     var showsPercentLabels = false
 
     var body: some View {
         Canvas { context, size in
             let left: CGFloat = showsPercentLabels ? 34 : 0
-            let right: CGFloat = palette.labelSize * 6 // room for "last week"
-            let bottom: CGFloat = palette.labelSize + 6
-            let plot = CGRect(x: left, y: 4, width: max(1, size.width - left - right), height: max(1, size.height - bottom - 4))
+            let top: CGFloat = 5
+            let bottom = size.height - palette.labelSize - 6
+            let plot = CGRect(x: left, y: top, width: max(1, size.width - 1 - left), height: max(1, bottom - top))
             let length = WeekProgress.length
+            let nowOffset = min(max(data.now.timeIntervalSince(data.week.start), 0), length)
             func point(_ offset: TimeInterval, _ percent: Double) -> CGPoint {
                 CGPoint(x: plot.minX + plot.width * min(max(offset / length, 0), 1),
                         y: plot.maxY - plot.height * min(max(percent / 100, 0), 1.0))
@@ -87,21 +90,33 @@ struct WeekChart: View {
                 return p
             }
             let ink = palette.ink
+            let color = palette.color(data.style)
+            let calendar = Calendar.current
+            let days = WeekProgress.chartDays(data.week, now: data.now, calendar: calendar)
+
+            // Today's stretch, faintly lit.
+            if let today = days.first(where: \.isToday) {
+                let rect = CGRect(x: point(today.from, 0).x, y: plot.minY - 3,
+                                  width: point(today.to, 0).x - point(today.from, 0).x, height: plot.height + 3)
+                context.fill(Path(roundedRect: rect, cornerRadius: 3), with: .color(ink.opacity(0.04)))
+            }
 
             // Faint lines at 0, 50 and 100%.
             for level in [0.0, 50, 100] {
                 var p = Path()
                 p.move(to: point(0, level)); p.addLine(to: point(length, level))
-                context.stroke(p, with: .color(ink.opacity(level == 0 ? 0.22 : 0.1)), lineWidth: 1)
+                context.stroke(p, with: .color(ink.opacity(level == 0 ? 0.22 : 0.08)), lineWidth: 1)
                 if showsPercentLabels {
                     context.draw(Text("\(Int(level))%").font(.system(size: palette.labelSize)).foregroundStyle(ink.opacity(0.5)),
                                  at: CGPoint(x: left - 6, y: point(0, level).y), anchor: .trailing)
+                } else if level > 0 {
+                    context.draw(Text("\(Int(level))%").font(.system(size: 8.5)).foregroundStyle(ink.opacity(0.34)),
+                                 at: CGPoint(x: plot.maxX - 1, y: point(0, level).y + 3), anchor: .topTrailing)
                 }
             }
 
             // Day ticks at local midnights, each day's initial centred on its stretch (today's brighter).
-            let calendar = Calendar.current
-            for day in WeekProgress.chartDays(data.week, now: data.now, calendar: calendar) {
+            for day in days {
                 let x = point(day.from, 0).x
                 var tick = Path()
                 tick.move(to: CGPoint(x: x, y: plot.maxY)); tick.addLine(to: CGPoint(x: x, y: plot.maxY + 3))
@@ -113,20 +128,49 @@ struct WeekChart: View {
                              at: CGPoint(x: (x + point(day.to, 0).x) / 2, y: plot.maxY + 3), anchor: .top)
             }
 
-            // Even pace.
-            var pace = Path()
-            pace.move(to: point(0, 0)); pace.addLine(to: point(length, 100))
-            context.stroke(pace, with: .color(ink.opacity(0.4)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            // This week so far, filled faintly down to 0%.
+            if let first = data.week.curve.first, let last = data.week.curve.last {
+                var fill = path(data.week.curve)
+                fill.addLine(to: point(last.offset, 0)); fill.addLine(to: point(first.offset, 0)); fill.closeSubpath()
+                context.fill(fill, with: .color(color.opacity(0.08)))
+            }
 
-            // The comparison.
-            func label(_ text: String, at end: CGPoint, opacity: Double) {
+            // Even pace: firmer up to now, quieter after.
+            let paceNow = point(nowOffset, nowOffset / length * 100)
+            for (from, to, opacity) in [(point(0, 0), paceNow, 0.4), (paceNow, point(length, 100), 0.16)] {
+                var pace = Path()
+                pace.move(to: from); pace.addLine(to: to)
+                context.stroke(pace, with: .color(ink.opacity(opacity)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            }
+
+            // Now: a dotted hairline from under the dot down to the axis.
+            let dot = data.week.curve.last.map { point($0.offset, $0.percent) }
+            if let dot, plot.maxY - (dot.y + 5) > 1 {
+                var hairline = Path()
+                hairline.move(to: CGPoint(x: dot.x, y: dot.y + 5)); hairline.addLine(to: CGPoint(x: dot.x, y: plot.maxY))
+                context.stroke(hairline, with: .color(ink.opacity(0.28)), style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [1.5, 2.5]))
+            }
+
+            // The comparison, labelled inside the plot near its right end, clear of the other lines.
+            let labelX = plot.minX + plot.width * 0.89
+            let labelOffset = length * 0.89
+            func label(_ text: String, on curve: [CurvePoint], opacity: Double) {
+                guard let value = WeekProgress.value(curve, at: labelOffset) else { return }
+                var others = [Double(point(labelOffset, labelOffset / length * 100).y)]
+                if let last = data.week.curve.last, last.offset >= labelOffset,
+                   let mine = WeekProgress.value(data.week.curve, at: labelOffset) {
+                    others.append(Double(point(labelOffset, mine).y))
+                }
+                let baseline = WeekProgress.comparisonLabelBaseline(lineY: Double(point(labelOffset, value).y), avoiding: others,
+                                                                    plotTop: Double(plot.minY), plotBottom: Double(plot.maxY),
+                                                                    labelHeight: Double(palette.labelSize))
                 context.draw(Text(text).font(.system(size: palette.labelSize)).foregroundStyle(ink.opacity(opacity)),
-                             at: CGPoint(x: end.x + 4, y: end.y), anchor: .leading)
+                             at: CGPoint(x: labelX, y: CGFloat(baseline)), anchor: .bottomTrailing)
             }
             switch data.comparison {
             case .line(let curve, let text):
                 context.stroke(path(curve), with: .color(ink.opacity(0.32)), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                if let last = curve.last { label(text, at: point(length, WeekProgress.value(curve, at: length) ?? last.percent), opacity: 0.5) }
+                label(text, on: curve, opacity: 0.5)
             case .band(let band, let text):
                 var area = Path()
                 for (i, o) in band.offsets.enumerated() {
@@ -137,21 +181,19 @@ struct WeekChart: View {
                 context.fill(area, with: .color(ink.opacity(0.1)))
                 let middle = zip(band.offsets, band.middle).map { CurvePoint(offset: $0, percent: $1) }
                 context.stroke(path(middle), with: .color(ink.opacity(0.32)), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                if let end = band.middle.last { label(text, at: point(length, end), opacity: 0.5) }
+                label(text, on: middle, opacity: 0.5)
             case nil:
                 break
             }
             if let overlay {
                 context.stroke(path(overlay.curve), with: .color(ink.opacity(0.6)),
                                style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [5, 2.5]))
-                label(overlay.label, at: point(length, WeekProgress.value(overlay.curve, at: length) ?? 0), opacity: 0.75)
+                label(overlay.label, on: overlay.curve, opacity: 0.75)
             }
 
             // This week so far.
-            let color = palette.color(data.style)
             context.stroke(path(data.week.curve), with: .color(color), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-            if let last = data.week.curve.last {
-                let dot = point(last.offset, last.percent)
+            if let dot {
                 context.fill(Path(ellipseIn: CGRect(x: dot.x - 3.5, y: dot.y - 3.5, width: 7, height: 7)), with: .color(color))
             }
         }

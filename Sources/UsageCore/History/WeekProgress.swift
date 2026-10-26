@@ -160,6 +160,15 @@ public enum WeekProgress {
         return result
     }
 
+    /// Where a comparison's label ("last week") sits inside the chart, as a baseline in points (y down):
+    /// 13 below its line, or 6 above it when that would land within 12 of another line or the plot's foot.
+    public static func comparisonLabelBaseline(lineY: Double, avoiding others: [Double], plotTop: Double,
+                                               plotBottom: Double, labelHeight: Double) -> Double {
+        let below = lineY + 13
+        let crowded = plotBottom - below < 12 || others.contains { abs($0 - below) < 12 }
+        return crowded ? max(lineY - 6, plotTop + labelHeight) : below
+    }
+
     // MARK: Comparisons
 
     public enum Comparison: String, CaseIterable, Sendable {

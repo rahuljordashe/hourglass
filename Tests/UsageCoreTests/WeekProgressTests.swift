@@ -171,6 +171,22 @@ struct WeekProgressTests {
         #expect(days.allSatisfy { $0.isLabelled })
     }
 
+    @Test func comparisonLabelSitsBelowItsLineUnlessCrowded() {
+        func baseline(_ y: Double, _ others: [Double] = []) -> Double {
+            WeekProgress.comparisonLabelBaseline(lineY: y, avoiding: others, plotTop: 5, plotBottom: 72, labelHeight: 10)
+        }
+        #expect(baseline(30) == 43)
+        // Too near this week's line or the pace line below: above its own line instead.
+        #expect(baseline(30, [50]) == 24)
+        #expect(baseline(30, [36]) == 24)
+        #expect(baseline(30, [60]) == 43)
+        // Too near the foot of the plot.
+        #expect(baseline(50) == 44)
+        // Never above the top of the plot.
+        #expect(baseline(64) == 58)
+        #expect(baseline(8, [21]) == 15)
+    }
+
     @Test func aLimitReachedBeforeTheResetBelongsToTheOldWeek() {
         // The old week ends Thursday 18:00 having hit 100% that morning; the new week starts at 2%.
         let old = (0..<4).map { line(at(day: Double($0), hour: 9), week: Double(40 + 20 * $0), weekReset: at(day: 3, hour: 18)) }
