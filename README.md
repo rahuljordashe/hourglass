@@ -57,10 +57,41 @@ it. Changes save as you make them, so **Done** only closes the editor.
 | Faces | A look for both ears: Rings (ring pair and countdown, the default), Numbers (5-hour % and weekly %), Time first (5-hour % and countdown), Bars (mini bars and 5-hour %), Clock (5-hour ring and reset time) or Quiet (a warning dot and nothing else). |
 | Left ear, Right ear | Any item in either ear: ring pair, 5-hour ring, 5-hour %, weekly %, both %, reset countdown, reset clock time, mini bars (5-hour over weekly), time wedge, a warning dot (only from 70%) or nothing. Ears are 36 pt; the reset clock time needs 46 pt, so that ear widens and may cover a menu bar icon. |
 | Hover | The time tick on the bars (on), a weekly budget line (off) and reset times (off), with a live copy of the peek. |
-| Open | Show, hide and reorder the weekly budget, weekly by model and usage credits sections. The 5-hour and weekly rows always stay at the top. |
+| Open | Show, hide and reorder the weekly budget, this week, weekly by model and usage credits sections. The 5-hour and weekly rows always stay at the top. |
 
 **Reset to default** brings back the original layout. Your choices are kept in the app's own
 preferences on this Mac; nothing new is read or sent.
+
+## History
+
+Hourglass keeps every fresh reading it takes, so you can see how you've used your limits over
+time. It's stored only on this Mac and never sent anywhere, and getting it reads nothing new.
+
+- **This week** in the open panel: this limit week's running total from reset to reset, against
+  an even pace (the dashed diagonal) and last week's line, with how far ahead of or under pace you
+  are. The line turns amber more than 10 points ahead of pace and red at the limit. Under it: "Last
+  week you were at 59% by now", led by when the limit was reached and when it comes back.
+- **History…** in the ••• menu opens a window that follows the Mac's light or dark appearance:
+  this week so far against last week, the last 4 weeks or the last 3 months; a calendar with one
+  row per limit week and a tile per day (darker for more of the week, red the day the limit was
+  reached, striped where there were no readings, a small amber dot where some use only showed up
+  after a gap); a panel for the selected day with its 5-hour windows; the "When you use it" map
+  once there are 14 days of readings; and **Export CSV…**. Click a past week's date to draw it over
+  this one.
+
+<img src="screenshots/history.png" alt="The History window, drawn from made-up history" width="600">
+
+Raw readings live in `~/Library/Application Support/Hourglass/history/`, one JSON line each in a
+file per month, and are deleted after 90 days. Summaries of each day, closed 5-hour window and
+week are kept for good, so older weeks keep their tiles. A reading identical to the last one isn't written, apart from one an hour, so a
+flat stretch can be told apart from a gap.
+
+**Explain spikes using Claude Code's session logs**, in the History window, is optional and off by
+default. Turned on, it reads `~/.claude/projects` read-only, when the window opens and at most once
+an hour, and keeps only the time, model, token counts and project folder name of each reply, added
+up per hour. It never reads or keeps your messages. It covers Claude Code only, not the Claude app,
+web or phone, and Claude Code deletes its logs after 30 days by default, so that's as far back as it
+goes. If the log format changes, it switches itself off and says so rather than show wrong numbers.
 
 ## How the data gets there
 
@@ -120,13 +151,15 @@ entry exactly.
 
 ## Screenshots
 
-See `screenshots/`: at rest, at rest while a video plays, peek (hover), open (click) and an alert,
-rendered from a made-up reading with `Hourglass --render-previews <folder>`.
+See `screenshots/`: at rest, at rest while a video plays, peek (hover), open (click), an alert and
+the History window, rendered from a made-up reading with `Hourglass --render-previews <folder>`.
+`scripts/fake-history.py <folder>` writes made-up history into a sandbox home for that
+(`HOURGLASS_HOME=<folder>`).
 
 ## Layout
 
-- `Sources/UsageCore`: models, the merge rules, pace, staleness and weekly budget maths, alerts, and the
-  settings installer. Foundation only, fully unit tested.
+- `Sources/UsageCore`: models, the merge rules, pace, staleness and weekly budget maths, alerts, the
+  usage history (`History/`) and the settings installer. Foundation only, fully unit tested.
 - `Sources/Bridge`: the status line command.
 - `Sources/Hourglass`: the app (SwiftUI and AppKit).
 - The notch panel is a plain `NSPanel` (`NotchPanel.swift`). `NotchShape` is adapted from
