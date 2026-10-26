@@ -144,6 +144,33 @@ struct WeekProgressTests {
         #expect(WeekProgress.dayStarts(morning, calendar: utcCalendar).first == at(day: 3))
     }
 
+    @Test func chartDaysFollowTheClockNotTheReset() throws {
+        // The reported case: a week resetting Friday 04:00 UTC (09:30 in Colombo), seen at 08:56 on Monday.
+        var colombo = Calendar(identifier: .gregorian)
+        colombo.timeZone = try #require(TimeZone(identifier: "Asia/Colombo"))
+        let start = Date(timeIntervalSince1970: 1_792_728_000) // Friday 23 Oct 2026 04:00 UTC
+        let week = LimitWeek(start: start, end: start.addingTimeInterval(WeekProgress.length), curve: [], finalPercent: nil)
+        let monday = Date(timeIntervalSince1970: 1_792_985_160) // Monday 26 Oct 2026 08:56 Colombo
+        let days = WeekProgress.chartDays(week, now: monday, calendar: colombo)
+        // Friday 09:30 to midnight, six whole days, then Friday midnight to 09:30.
+        #expect(days.map(\.weekday) == [6, 7, 1, 2, 3, 4, 5, 6])
+        #expect(days.first?.from == 0)
+        #expect(days.first?.to == 14.5 * 3600)
+        #expect(days.last?.to == WeekProgress.length)
+        #expect(days.filter(\.isToday).map(\.weekday) == [2])
+        // The short last Friday goes unlabelled so Friday isn't drawn twice.
+        #expect(days.map(\.isLabelled) == [true, true, true, true, true, true, true, false])
+    }
+
+    @Test func chartDaysForAMidnightReset() {
+        let week = LimitWeek(start: at(), end: at(day: 7), curve: [], finalPercent: nil)
+        let days = WeekProgress.chartDays(week, now: at(day: 6, hour: 23), calendar: utcCalendar)
+        #expect(days.count == 7)
+        #expect(days.map(\.from) == (0..<7).map { Double($0) * 86400 })
+        #expect(days.map(\.isToday) == [false, false, false, false, false, false, true])
+        #expect(days.allSatisfy { $0.isLabelled })
+    }
+
     @Test func aLimitReachedBeforeTheResetBelongsToTheOldWeek() {
         // The old week ends Thursday 18:00 having hit 100% that morning; the new week starts at 2%.
         let old = (0..<4).map { line(at(day: Double($0), hour: 9), week: Double(40 + 20 * $0), weekReset: at(day: 3, hour: 18)) }

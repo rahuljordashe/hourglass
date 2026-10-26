@@ -99,22 +99,18 @@ struct WeekChart: View {
                 }
             }
 
-            // Day ticks.
+            // Day ticks at local midnights, each day's initial centred on its stretch (today's brighter).
             let calendar = Calendar.current
-            for day in 0..<7 {
-                let offset = Double(day) * 86400
-                let start = data.week.start.addingTimeInterval(offset)
-                let isToday = start <= data.now && data.now < start.addingTimeInterval(86400)
-                let x = point(offset, 0).x
+            for day in WeekProgress.chartDays(data.week, now: data.now, calendar: calendar) {
+                let x = point(day.from, 0).x
                 var tick = Path()
                 tick.move(to: CGPoint(x: x, y: plot.maxY)); tick.addLine(to: CGPoint(x: x, y: plot.maxY + 3))
                 context.stroke(tick, with: .color(ink.opacity(0.25)), lineWidth: 1)
-                // Each 24 hours from the reset is labelled with the weekday at its middle.
-                let middle = start.addingTimeInterval(43200)
-                let initial = String(calendar.veryShortWeekdaySymbols[calendar.component(.weekday, from: middle) - 1])
-                context.draw(Text(initial).font(.system(size: palette.labelSize, weight: isToday ? .semibold : .regular))
-                                .foregroundStyle(ink.opacity(isToday ? 0.9 : 0.42)),
-                             at: CGPoint(x: x + plot.width / 14, y: plot.maxY + 3), anchor: .top)
+                guard day.isLabelled else { continue }
+                let initial = String(calendar.veryShortWeekdaySymbols[day.weekday - 1])
+                context.draw(Text(initial).font(.system(size: palette.labelSize, weight: day.isToday ? .semibold : .regular))
+                                .foregroundStyle(ink.opacity(day.isToday ? 0.9 : 0.42)),
+                             at: CGPoint(x: (x + point(day.to, 0).x) / 2, y: plot.maxY + 3), anchor: .top)
             }
 
             // Even pace.

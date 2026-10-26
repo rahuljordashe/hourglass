@@ -129,6 +129,37 @@ public enum WeekProgress {
         return result
     }
 
+    /// One local day's stretch of a week's chart, from a midnight (or the reset) to the next.
+    public struct ChartDay: Equatable, Sendable {
+        /// Seconds from the week's start, clipped to the week.
+        public var from: TimeInterval
+        public var to: TimeInterval
+        /// 1 is Sunday, as `Calendar` counts.
+        public var weekday: Int
+        public var isToday: Bool
+        /// Labelled when at least half a day of it is in the week, or when it's today.
+        public var isLabelled: Bool
+    }
+
+    /// The chart's x axis split at local midnights, so each day's initial sits on that calendar day and
+    /// today follows the clock, not the reset time. A reset partway through a day leaves a short day at each end.
+    public static func chartDays(_ week: LimitWeek, now: Date, calendar: Calendar = .current) -> [ChartDay] {
+        let end = week.start.addingTimeInterval(length)
+        var cursor = week.start
+        var result: [ChartDay] = []
+        while cursor < end, result.count < 9 {
+            let day = calendar.startOfDay(for: cursor)
+            let next = min(calendar.date(byAdding: .day, value: 1, to: day) ?? end, end)
+            guard next > cursor else { break }
+            let isToday = cursor <= now && now < next
+            result.append(ChartDay(from: cursor.timeIntervalSince(week.start), to: next.timeIntervalSince(week.start),
+                                   weekday: calendar.component(.weekday, from: day), isToday: isToday,
+                                   isLabelled: isToday || next.timeIntervalSince(cursor) >= 12 * 3600))
+            cursor = next
+        }
+        return result
+    }
+
     // MARK: Comparisons
 
     public enum Comparison: String, CaseIterable, Sendable {
